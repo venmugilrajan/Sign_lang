@@ -1,0 +1,20 @@
+# Python / Bytecode
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+.venv
+
+# Large Raw Datasets (Do not push tens of thousands of raw image files to Git)
+asl-alphabet-train/
+indian sign language/
+sign language dataset 2/
+
+# Temporary / OS
+.DS_Store
+Thumbs.db
+*.log

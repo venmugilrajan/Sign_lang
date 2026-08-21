@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SignLens — MediaPipe Sign Language Translator</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700;800&family=JetBrains+Mono:wght@500&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="style.css" />
+
+  <!-- MediaPipe -->
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+</head>
+<body>
+
+  <div class="bg-orb orb-1"></div>
+  <div class="bg-orb orb-2"></div>
+
+  <!-- HEADER -->
+  <header class="header">
+    <div class="logo">🤟 <span>Sign<span class="accent">Lens</span></span></div>
+    <div class="header-center">
+      <div class="mode-toggle" id="mode-toggle">
+        <button class="mode-btn active" data-mode="asl" id="btn-asl">🇺🇸 ASL</button>
+        <button class="mode-btn" data-mode="isl" id="btn-isl">🇮🇳 ISL</button>
+        <div class="mode-slider"></div>
+      </div>
+    </div>
+    <div class="status-pill" id="status-pill">
+      <span class="status-dot"></span>
+      <span id="status-text">Connecting…</span>
+    </div>
+  </header>
+
+  <!-- MAIN -->
+  <main class="main">
+
+    <!-- LEFT: MediaPipe Camera Canvas -->
+    <div class="cam-panel glass">
+
+      <!-- Hidden video input for MediaPipe -->
+      <video id="webcam-video" autoplay playsinline muted style="display:none;"></video>
+
+      <!-- Main display canvas (video + skeleton drawn here) -->
+      <canvas id="display-canvas"></canvas>
+
+      <!-- Hand not detected overlay -->
+      <div class="no-hand-overlay" id="no-hand-overlay">
+        <div class="no-hand-icon">✋</div>
+        <div class="no-hand-text">Show your hand to the camera</div>
+      </div>
+
+      <!-- Detected letter bottom bar -->
+      <div class="letter-bar">
+        <div class="letter-bar-left">
+          <div class="detected-letter" id="detected-letter">—</div>
+          <div class="detected-sub" id="detected-conf">Waiting…</div>
+        </div>
+        <div class="letter-bar-right">
+          <div class="streak-wrap">
+            <div class="streak-track"><div class="streak-fill" id="streak-bar"></div></div>
+            <div class="streak-label" id="streak-label">0 / 3</div>
+          </div>
+          <div class="hand-badge" id="hand-badge">NO HAND</div>
+        </div>
+      </div>
+
+      <!-- Cam controls -->
+      <div class="cam-controls">
+        <button class="ctrl-btn" id="btn-pause-detection">⏸ Pause</button>
+        <button class="ctrl-btn active-btn" id="btn-camera-toggle">📷 Stop Camera</button>
+      </div>
+    </div>
+
+    <!-- RIGHT: Word + Sentence output -->
+    <div class="output-panel">
+
+      <!-- Current word -->
+      <div class="word-card glass">
+        <div class="card-label">BUILDING WORD</div>
+        <div class="word-display" id="word-display">
+          <span class="ph">Start signing…</span>
+        </div>
+        <div class="word-actions">
+          <button class="btn-ghost" id="btn-backspace">⌫ Delete</button>
+          <button class="btn-ghost" id="btn-add-space">␣ Next Word</button>
+          <button class="btn-danger" id="btn-clear-word">Clear</button>
+        </div>
+      </div>
+
+      <!-- Sentence -->
+      <div class="sentence-card glass">
+        <div class="card-label-row">
+          <span class="card-label">SENTENCE</span>
+          <div class="row-btns">
+            <button class="icon-btn" id="btn-speak" title="Speak">🔊</button>
+            <button class="icon-btn" id="btn-copy" title="Copy">📋</button>
+          </div>
+        </div>
+        <div class="sentence-display" id="sentence-display">
+          <em class="ph">Your sentence will appear here…</em>
+        </div>
+        <div class="word-chips" id="word-chips"></div>
+        <button class="btn-danger wide" id="btn-clear-sentence">🗑 Clear All</button>
+      </div>
+
+      <!-- Instructions -->
+      <div class="info-card glass">
+        <div class="card-label">HOW IT WORKS</div>
+        <div class="steps">
+          <div class="step"><span>✋</span><span>Show hand sign to camera</span></div>
+          <div class="step"><span>⚡</span><span>MediaPipe tracks your hand joints live</span></div>
+          <div class="step"><span>🔁</span><span>Hold same sign → letter auto-captured</span></div>
+          <div class="step"><span>✊</span><span>Drop hand → word saved to sentence</span></div>
+        </div>
+        <div class="shortcuts">
+          <span class="key">Space</span> next word &nbsp;
+          <span class="key">⌫</span> delete &nbsp;
+          <span class="key">1</span> ASL &nbsp;
+          <span class="key">2</span> ISL
+        </div>
+      </div>
+
+    </div>
+  </main>
+
+  <div class="toast" id="toast"></div>
+  <script src="app.js"></script>
+</body>
+</html>
