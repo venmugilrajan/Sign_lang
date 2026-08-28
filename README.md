@@ -23,7 +23,7 @@ A production-grade, real-time American Sign Language (ASL) and Indian Sign Langu
 ## 🚀 Quickstart
 
 ### 1. Install Dependencies
-```bash
+```bash 
 pip install -r requirements.txt
 ```
 
