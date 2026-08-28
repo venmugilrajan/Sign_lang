@@ -5,8 +5,9 @@ Key Improvements:
 1. Aspect-Ratio Corrected Normalized Features (Independent of 1:1 square image vs 16:9 widescreen camera)
 2. Invariant Hand Angle / Rotation Alignment (Aligns wrist-to-MCP axis to vertical)
 3. Hand Joint Angles & Distance Features (Computes 15 key finger flexion & knuckle angles)
-4. Dedicated 26-Letter ASL Alphabet Classifier + Extended Sign Classifiers
-5. Random Forest / Extra Trees / High-Capacity Tuned MLP Ensembles
+4. Border Padding Support for tightly cropped fist gestures (E, M, N, O, S, T, X)
+5. Left/Right Handedness Mirror Normalization
+6. 26-Letter ASL Alphabet Classifier + Extended Sign Classifiers
 """
 
 import os
@@ -31,7 +32,6 @@ from mediapipe.tasks import python
 from mediapipe.tasks.python import vision
 
 from sklearn.neural_network import MLPClassifier
-from sklearn.ensemble import RandomForestClassifier, ExtraTreesClassifier, VotingClassifier
 from sklearn.preprocessing import LabelEncoder
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import accuracy_score, classification_report, confusion_matrix
@@ -48,8 +48,8 @@ ASL_DIR = BASE_DIR / "asl-alphabet-train"
 ISL_DIR = BASE_DIR / "indian sign language" / "Indian"
 DS2_DIR = BASE_DIR / "sign language dataset 2" / "Gesture Image Data"
 
-CACHE_ASL = MODELS_DIR / "asl_landmark_cache_v2.pkl"
-CACHE_ISL = MODELS_DIR / "isl_landmark_cache_v2.pkl"
+CACHE_ASL = MODELS_DIR / "asl_landmark_cache_v3.pkl"
+CACHE_ISL = MODELS_DIR / "isl_landmark_cache_v3.pkl"
 
 EXPORT_ASL_PKL = MODELS_DIR / "asl_landmark_model.pkl"
 EXPORT_ISL_PKL = MODELS_DIR / "isl_landmark_model.pkl"
@@ -62,7 +62,11 @@ CM_ISL_PNG = BASE_DIR / "isl_confusion_matrix.png"
 
 # Initialize MediaPipe Tasks HandLandmarker
 base_options = python.BaseOptions(model_asset_path=MODEL_TASK_PATH)
-options = vision.HandLandmarkerOptions(base_options=base_options, num_hands=1)
+options = vision.HandLandmarkerOptions(
+    base_options=base_options,
+    min_hand_detection_confidence=0.3,
+    num_hands=1
+)
 detector = vision.HandLandmarker.create_from_options(options)
 
 # 26 Standard Alphabet letters + space + del
@@ -81,22 +85,22 @@ def calculate_angle_3d(a, b, c):
 def extract_features_from_image(img_bgr: np.ndarray):
     """
     Robust Feature Extractor:
-    1. Converts normalized (0..1) coordinates to true pixel coordinates (w, h) to preserve geometry.
-    2. Centers on wrist (landmark 0).
-    3. Rotates coordinate system so palm vector (wrist -> middle MCP 9) is vertically aligned (rotation-invariant).
-    4. Scales relative to palm size.
-    5. Appends 15 finger joint flexion angles.
+    1. Handles tightly cropped images with automatic contextual border padding.
+    2. Converts normalized (0..1) coordinates to true pixel coordinates (w, h).
+    3. Normalizes Left hand into Right hand geometric space.
+    4. Centers on wrist (landmark 0) and aligns rotation along Y-axis.
+    5. Appends 15 finger joint flexion angles (78 total features).
     """
     if img_bgr is None or img_bgr.size == 0:
         return None
 
     h, w = img_bgr.shape[:2]
-    if max(h, w) < 180:
-        scale_f = 200.0 / max(h, w)
-        img_bgr = cv2.resize(img_bgr, (int(w * scale_f), int(h * scale_f)), interpolation=cv2.INTER_CUBIC)
-        h, w = img_bgr.shape[:2]
+    # Add border padding so closed-fist gestures with tight crops are easily localized by MediaPipe
+    pad = int(max(h, w) * 0.25)
+    img_padded = cv2.copyMakeBorder(img_bgr, pad, pad, pad, pad, cv2.BORDER_REPLICATE)
+    hp, wp = img_padded.shape[:2]
 
-    img_rgb = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2RGB)
+    img_rgb = cv2.cvtColor(img_padded, cv2.COLOR_BGR2RGB)
     mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=img_rgb)
     results = detector.detect(mp_image)
 
@@ -104,15 +108,20 @@ def extract_features_from_image(img_bgr: np.ndarray):
         return None
 
     landmarks = results.hand_landmarks[0]
+    handedness = results.handedness[0][0].category_name if results.handedness else "Right"
 
     # Step 1: Pixel coordinates (aspect ratio invariant)
-    pts = np.array([[lm.x * w, lm.y * h, lm.z * w] for lm in landmarks], dtype=np.float32)
+    pts = np.array([[lm.x * wp, lm.y * hp, lm.z * wp] for lm in landmarks], dtype=np.float32)
 
-    # Step 2: Center on wrist
+    # Step 2: Left-to-Right Normalization
+    if handedness == "Left":
+        pts[:, 0] = pts[0, 0] - (pts[:, 0] - pts[0, 0])
+
+    # Step 3: Center on wrist
     wrist = pts[0]
     pts_centered = pts - wrist
 
-    # Step 3: Palm scale
+    # Step 4: Palm scale
     middle_mcp = pts_centered[9]
     scale = np.linalg.norm(middle_mcp[:2])
     if scale < 1e-4:
@@ -120,7 +129,7 @@ def extract_features_from_image(img_bgr: np.ndarray):
 
     pts_scaled = pts_centered / scale
 
-    # Step 4: 2D Palm Rotation Alignment (aligns wrist->middle_mcp along positive Y-axis)
+    # Step 5: 2D Palm Rotation Alignment
     angle = np.arctan2(pts_scaled[9, 0], -pts_scaled[9, 1])
     cos_a, sin_a = np.cos(angle), np.sin(angle)
     rot_matrix = np.array([[cos_a, sin_a], [-sin_a, cos_a]])
@@ -128,7 +137,7 @@ def extract_features_from_image(img_bgr: np.ndarray):
     pts_aligned = pts_scaled.copy()
     pts_aligned[:, :2] = np.dot(pts_scaled[:, :2], rot_matrix)
 
-    # Step 5: Finger Joint Angles (flexion & abduction)
+    # Step 6: Finger Joint Angles (flexion & abduction)
     angles = [
         calculate_angle_3d(pts[0], pts[1], pts[2]),   # Thumb CMC
         calculate_angle_3d(pts[1], pts[2], pts[3]),   # Thumb MCP
@@ -147,7 +156,6 @@ def extract_features_from_image(img_bgr: np.ndarray):
         calculate_angle_3d(pts[18], pts[19], pts[20]),# Pinky DIP
     ]
 
-    # Combine 63 aligned coordinates + 15 joint angles = 78 geometric features
     features = np.concatenate([pts_aligned.flatten(), angles])
     return features
 
@@ -298,7 +306,6 @@ def train_and_evaluate(X, y_raw, classes, model_name, pkl_export, json_export, c
         f"{model_name} Confusion Matrix (Held-out Test Set - Acc: {test_acc:.1f}%)"
     )
 
-    # 1. Export Python Pickle Model
     with open(pkl_export, "wb") as f:
         pickle.dump({
             "model": clf,
@@ -311,7 +318,6 @@ def train_and_evaluate(X, y_raw, classes, model_name, pkl_export, json_export, c
         }, f)
     print(f"[+] Exported Python model package to: {pkl_export}")
 
-    # 2. Export Browser-Compatible JSON Weights
     weights_json = {
         "classes": class_names,
         "w0": clf.coefs_[0].tolist(),
@@ -332,10 +338,9 @@ def train_and_evaluate(X, y_raw, classes, model_name, pkl_export, json_export, c
 
 def main():
     print("=" * 70)
-    print("  Sign Language Landmark Classifier Training Pipeline (Robust Edition)")
+    print("  Sign Language Landmark Classifier Training Pipeline (Balanced V3 Edition)")
     print("=" * 70)
 
-    # 1. ASL: Train clean 26 Alphabet + del + space classes
     asl_sources = [ASL_DIR]
     if DS2_DIR.exists():
         asl_sources.append(DS2_DIR)
@@ -356,7 +361,6 @@ def main():
         cm_path=CM_ASL_PNG,
     )
 
-    # 2. ISL: Train on Indian sign language
     if ISL_DIR.exists():
         X_isl, y_isl, classes_isl = collect_landmark_dataset(
             dataset_dirs=[ISL_DIR],
