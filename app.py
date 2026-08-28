@@ -194,17 +194,25 @@ def predict():
         return jsonify({"error": str(e)}), 500
 
 
+from word_buffer_engine import TwoTierSpellCorrector
+
+two_tier_corrector = TwoTierSpellCorrector()
+
+
 @app.route("/spellcheck", methods=["POST"])
 def spellcheck():
     data = request.get_json() or {}
     raw_word = data.get("word", "").strip()
+    confidences = data.get("confidences", None)
     if not raw_word:
-        return jsonify({"original": "", "corrected": ""})
+        return jsonify({"original": "", "corrected": "", "suggestions": []})
 
-    corrected = spell.correction(raw_word.lower())
+    corrected, is_corr, suggestions = two_tier_corrector.correct(raw_word, confidences)
     return jsonify({
-        "original": raw_word,
-        "corrected": (corrected.upper() if corrected else raw_word.upper())
+        "original": raw_word.upper(),
+        "corrected": corrected,
+        "is_corrected": is_corr,
+        "suggestions": suggestions
     })
 
 

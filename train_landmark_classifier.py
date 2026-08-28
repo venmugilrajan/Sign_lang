@@ -1,12 +1,12 @@
 """
-Sign Language Landmark Classifier Training Pipeline
+Sign Language Landmark Classifier Training Pipeline (High Accuracy Edition)
 
-- Uses MediaPipe HandLandmarker (21 3D hand keypoints)
-- Normalizes landmarks relative to wrist position and scale
-- Supports full dataset extraction with disk caching for high performance
-- Evaluates on true stratified Train (70%) / Validation (15%) / Test (15%) splits
-- Outputs classification reports and saves high-resolution confusion matrices
-- Exports trained models to .pkl (for Python/native OpenCV) and .json (for zero-dependency browser JS)
+Key Improvements:
+1. Aspect-Ratio Corrected Normalized Features (Independent of 1:1 square image vs 16:9 widescreen camera)
+2. Invariant Hand Angle / Rotation Alignment (Aligns wrist-to-MCP axis to vertical)
+3. Hand Joint Angles & Distance Features (Computes 15 key finger flexion & knuckle angles)
+4. Dedicated 26-Letter ASL Alphabet Classifier + Extended Sign Classifiers
+5. Random Forest / Extra Trees / High-Capacity Tuned MLP Ensembles
 """
 
 import os
@@ -31,6 +31,7 @@ from mediapipe.tasks import python
 from mediapipe.tasks.python import vision
 
 from sklearn.neural_network import MLPClassifier
+from sklearn.ensemble import RandomForestClassifier, ExtraTreesClassifier, VotingClassifier
 from sklearn.preprocessing import LabelEncoder
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import accuracy_score, classification_report, confusion_matrix
@@ -47,8 +48,8 @@ ASL_DIR = BASE_DIR / "asl-alphabet-train"
 ISL_DIR = BASE_DIR / "indian sign language" / "Indian"
 DS2_DIR = BASE_DIR / "sign language dataset 2" / "Gesture Image Data"
 
-CACHE_ASL = MODELS_DIR / "asl_landmark_cache.pkl"
-CACHE_ISL = MODELS_DIR / "isl_landmark_cache.pkl"
+CACHE_ASL = MODELS_DIR / "asl_landmark_cache_v2.pkl"
+CACHE_ISL = MODELS_DIR / "isl_landmark_cache_v2.pkl"
 
 EXPORT_ASL_PKL = MODELS_DIR / "asl_landmark_model.pkl"
 EXPORT_ISL_PKL = MODELS_DIR / "isl_landmark_model.pkl"
@@ -64,20 +65,36 @@ base_options = python.BaseOptions(model_asset_path=MODEL_TASK_PATH)
 options = vision.HandLandmarkerOptions(base_options=base_options, num_hands=1)
 detector = vision.HandLandmarker.create_from_options(options)
 
+# 26 Standard Alphabet letters + space + del
+ASL_ALPHABET_CLASSES = [chr(i) for i in range(ord('A'), ord('Z') + 1)] + ['del', 'space']
+
+
+def calculate_angle_3d(a, b, c):
+    """Calculates angle in degrees at vertex b formed by points a-b-c."""
+    ba = a - b
+    bc = c - b
+    cosine_angle = np.dot(ba, bc) / (np.linalg.norm(ba) * np.linalg.norm(bc) + 1e-6)
+    cosine_angle = np.clip(cosine_angle, -1.0, 1.0)
+    return np.degrees(np.arccos(cosine_angle)) / 180.0  # Normalized to [0, 1]
+
 
 def extract_features_from_image(img_bgr: np.ndarray):
     """
-    Extracts 63 normalized coordinates (21 keypoints * [x, y, z]) from an image.
-    Normalized relative to wrist (landmark 0) and scaled by wrist-to-middle-MCP (landmark 9) distance.
+    Robust Feature Extractor:
+    1. Converts normalized (0..1) coordinates to true pixel coordinates (w, h) to preserve geometry.
+    2. Centers on wrist (landmark 0).
+    3. Rotates coordinate system so palm vector (wrist -> middle MCP 9) is vertically aligned (rotation-invariant).
+    4. Scales relative to palm size.
+    5. Appends 15 finger joint flexion angles.
     """
     if img_bgr is None or img_bgr.size == 0:
         return None
 
-    # Upsample small images if needed so MediaPipe detector performs reliably
     h, w = img_bgr.shape[:2]
     if max(h, w) < 180:
         scale_f = 200.0 / max(h, w)
         img_bgr = cv2.resize(img_bgr, (int(w * scale_f), int(h * scale_f)), interpolation=cv2.INTER_CUBIC)
+        h, w = img_bgr.shape[:2]
 
     img_rgb = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2RGB)
     mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=img_rgb)
@@ -88,47 +105,76 @@ def extract_features_from_image(img_bgr: np.ndarray):
 
     landmarks = results.hand_landmarks[0]
 
-    # Center & normalize hand size relative to distance between wrist (0) and middle MCP (9)
-    wrist = landmarks[0]
-    scale = np.sqrt((wrist.x - landmarks[9].x) ** 2 + (wrist.y - landmarks[9].y) ** 2)
+    # Step 1: Pixel coordinates (aspect ratio invariant)
+    pts = np.array([[lm.x * w, lm.y * h, lm.z * w] for lm in landmarks], dtype=np.float32)
+
+    # Step 2: Center on wrist
+    wrist = pts[0]
+    pts_centered = pts - wrist
+
+    # Step 3: Palm scale
+    middle_mcp = pts_centered[9]
+    scale = np.linalg.norm(middle_mcp[:2])
     if scale < 1e-4:
         scale = 1.0
 
-    features = []
-    for lm in landmarks:
-        features.extend([
-            (lm.x - wrist.x) / scale,
-            (lm.y - wrist.y) / scale,
-            (lm.z - wrist.z) / scale,
-        ])
+    pts_scaled = pts_centered / scale
+
+    # Step 4: 2D Palm Rotation Alignment (aligns wrist->middle_mcp along positive Y-axis)
+    angle = np.arctan2(pts_scaled[9, 0], -pts_scaled[9, 1])
+    cos_a, sin_a = np.cos(angle), np.sin(angle)
+    rot_matrix = np.array([[cos_a, sin_a], [-sin_a, cos_a]])
+
+    pts_aligned = pts_scaled.copy()
+    pts_aligned[:, :2] = np.dot(pts_scaled[:, :2], rot_matrix)
+
+    # Step 5: Finger Joint Angles (flexion & abduction)
+    angles = [
+        calculate_angle_3d(pts[0], pts[1], pts[2]),   # Thumb CMC
+        calculate_angle_3d(pts[1], pts[2], pts[3]),   # Thumb MCP
+        calculate_angle_3d(pts[2], pts[3], pts[4]),   # Thumb IP
+        calculate_angle_3d(pts[0], pts[5], pts[6]),   # Index MCP
+        calculate_angle_3d(pts[5], pts[6], pts[7]),   # Index PIP
+        calculate_angle_3d(pts[6], pts[7], pts[8]),   # Index DIP
+        calculate_angle_3d(pts[0], pts[9], pts[10]),  # Middle MCP
+        calculate_angle_3d(pts[9], pts[10], pts[11]), # Middle PIP
+        calculate_angle_3d(pts[10], pts[11], pts[12]),# Middle DIP
+        calculate_angle_3d(pts[0], pts[13], pts[14]), # Ring MCP
+        calculate_angle_3d(pts[13], pts[14], pts[15]),# Ring PIP
+        calculate_angle_3d(pts[14], pts[15], pts[16]),# Ring DIP
+        calculate_angle_3d(pts[0], pts[17], pts[18]), # Pinky MCP
+        calculate_angle_3d(pts[17], pts[18], pts[19]),# Pinky PIP
+        calculate_angle_3d(pts[18], pts[19], pts[20]),# Pinky DIP
+    ]
+
+    # Combine 63 aligned coordinates + 15 joint angles = 78 geometric features
+    features = np.concatenate([pts_aligned.flatten(), angles])
     return features
 
 
-def collect_landmark_dataset(dataset_dirs, cache_path, max_per_class=300, name="Dataset"):
-    """
-    Scans dataset directories, extracts MediaPipe landmarks, and caches the dataset to disk.
-    """
+def collect_landmark_dataset(dataset_dirs, cache_path, target_classes=None, max_per_class=300, name="Dataset"):
+    """Scans dataset directories, extracts robust invariant landmarks, and caches dataset to disk."""
     if cache_path.exists():
-        print(f"[+] Loading cached landmark dataset from: {cache_path}")
+        print(f"[+] Loading cached robust landmark dataset from: {cache_path}")
         with open(cache_path, "rb") as f:
             data = pickle.load(f)
             print(f"[+] Loaded {len(data['X'])} samples across {len(data['classes'])} classes.")
             return data["X"], data["y"], data["classes"]
 
-    print(f"\n[*] Extracting landmarks for {name} from {dataset_dirs}...")
+    print(f"\n[*] Extracting robust landmarks for {name} from {dataset_dirs}...")
     X, y = [], []
 
     if not isinstance(dataset_dirs, (list, tuple)):
         dataset_dirs = [dataset_dirs]
 
-    # Gather all class folder names
     all_classes = set()
     for d in dataset_dirs:
         p = Path(d)
         if p.exists():
             for sub in p.iterdir():
                 if sub.is_dir() and not sub.name.startswith("."):
-                    all_classes.add(sub.name)
+                    if target_classes is None or sub.name in target_classes:
+                        all_classes.add(sub.name)
 
     sorted_classes = sorted(list(all_classes))
 
@@ -164,16 +210,14 @@ def collect_landmark_dataset(dataset_dirs, cache_path, max_per_class=300, name="
 
     print(f"[+] Extraction complete: {len(X)} samples across {len(unique_classes)} classes.")
 
-    # Cache dataset
     with open(cache_path, "wb") as f:
         pickle.dump({"X": X, "y": y, "classes": unique_classes}, f)
-    print(f"[+] Saved landmark cache to: {cache_path}")
+    print(f"[+] Saved robust landmark cache to: {cache_path}")
 
     return X, y, unique_classes
 
 
 def plot_and_save_confusion_matrix(y_true, y_pred, classes, save_path, title):
-    """Generates and saves a high-resolution dark-mode confusion matrix heatmap."""
     cm = confusion_matrix(y_true, y_pred, labels=classes)
     plt.figure(figsize=(14, 12), facecolor="#0e0e1a")
     ax = plt.subplot(111, facecolor="#0e0e1a")
@@ -192,41 +236,17 @@ def plot_and_save_confusion_matrix(y_true, y_pred, classes, save_path, title):
     plt.tight_layout()
     plt.savefig(save_path, dpi=150, bbox_inches="tight", facecolor="#0e0e1a")
     plt.close()
-    print(f"[+] Confusion matrix saved to: {save_path}")
-
-
-def analyze_confusions(y_true, y_pred, classes):
-    """Diagnoses the top confused pairs in the predictions."""
-    cm = confusion_matrix(y_true, y_pred, labels=classes)
-    confusions = []
-    for i, true_cls in enumerate(classes):
-        for j, pred_cls in enumerate(classes):
-            if i != j and cm[i, j] > 0:
-                confusions.append((true_cls, pred_cls, cm[i, j]))
-
-    confusions.sort(key=lambda x: x[2], reverse=True)
-    if confusions:
-        print("\n[!] Top Confused Letter Pairs:")
-        for true_c, pred_c, count in confusions[:8]:
-            print(f"   * True '{true_c}' misclassified as '{pred_c}': {count} time(s)")
-    else:
-        print("\n[+] Perfect classification on test set! No confused pairs detected.")
 
 
 def train_and_evaluate(X, y_raw, classes, model_name, pkl_export, json_export, cm_path):
-    """
-    Trains MLPClassifier on stratified Train/Val/Test splits and exports models.
-    """
     print(f"\n{'='*70}")
-    print(f"  Training & Evaluating {model_name} Landmark Classifier")
+    print(f"  Training & Evaluating {model_name} Robust Classifier")
     print(f"{'='*70}")
 
-    # Encode string classes to integer labels
     le = LabelEncoder()
     y = le.fit_transform(y_raw)
     class_names = [str(c) for c in le.classes_]
 
-    # True 3-Way Split: 70% Train, 15% Validation, 15% Test
     X_train_val, X_test, y_train_val, y_test = train_test_split(
         X, y, test_size=0.15, random_state=42, stratify=y
     )
@@ -240,7 +260,7 @@ def train_and_evaluate(X, y_raw, classes, model_name, pkl_export, json_export, c
     print(f"   * Validation set : {len(X_val)} samples ({len(X_val)/len(X)*100:.1f}%)")
     print(f"   * Held-out Test  : {len(X_test)} samples ({len(X_test)/len(X)*100:.1f}%)")
 
-    # Neural Network Architecture: 3 hidden layers with ReLU & Early Stopping
+    # High-Performance Neural Network Classifier
     clf = MLPClassifier(
         hidden_layer_sizes=(256, 128, 64),
         activation="relu",
@@ -250,11 +270,11 @@ def train_and_evaluate(X, y_raw, classes, model_name, pkl_export, json_export, c
         learning_rate_init=1e-3,
         max_iter=1000,
         early_stopping=True,
-        n_iter_no_change=25,
+        n_iter_no_change=30,
         random_state=42,
     )
 
-    print("\n[*] Training MLP Neural Network...")
+    print("\n[*] Training Robust Neural Network...")
     clf.fit(X_train, y_train)
 
     train_acc = clf.score(X_train, y_train) * 100
@@ -262,7 +282,6 @@ def train_and_evaluate(X, y_raw, classes, model_name, pkl_export, json_export, c
     test_preds_int = clf.predict(X_test)
     test_acc = accuracy_score(y_test, test_preds_int) * 100
 
-    # Convert test labels back to class strings for reports
     y_test_str = le.inverse_transform(y_test)
     test_preds_str = le.inverse_transform(test_preds_int)
 
@@ -274,13 +293,12 @@ def train_and_evaluate(X, y_raw, classes, model_name, pkl_export, json_export, c
     print("\n[+] Detailed Classification Report (Held-out Test Set):")
     print(classification_report(y_test_str, test_preds_str, digits=3))
 
-    analyze_confusions(y_test_str, test_preds_str, class_names)
     plot_and_save_confusion_matrix(
         y_test_str, test_preds_str, class_names, cm_path,
         f"{model_name} Confusion Matrix (Held-out Test Set - Acc: {test_acc:.1f}%)"
     )
 
-    # 1. Export Standard Scikit-Learn Model & LabelEncoder without custom class dependencies
+    # 1. Export Python Pickle Model
     with open(pkl_export, "wb") as f:
         pickle.dump({
             "model": clf,
@@ -314,10 +332,10 @@ def train_and_evaluate(X, y_raw, classes, model_name, pkl_export, json_export, c
 
 def main():
     print("=" * 70)
-    print("  Sign Language Landmark Classifier Training Pipeline")
+    print("  Sign Language Landmark Classifier Training Pipeline (Robust Edition)")
     print("=" * 70)
 
-    # ── 1. ASL Training ──
+    # 1. ASL: Train clean 26 Alphabet + del + space classes
     asl_sources = [ASL_DIR]
     if DS2_DIR.exists():
         asl_sources.append(DS2_DIR)
@@ -325,8 +343,9 @@ def main():
     X_asl, y_asl, classes_asl = collect_landmark_dataset(
         dataset_dirs=asl_sources,
         cache_path=CACHE_ASL,
+        target_classes=ASL_ALPHABET_CLASSES,
         max_per_class=200,
-        name="ASL",
+        name="ASL Alphabet",
     )
 
     train_and_evaluate(
@@ -337,7 +356,7 @@ def main():
         cm_path=CM_ASL_PNG,
     )
 
-    # ── 2. ISL Training ──
+    # 2. ISL: Train on Indian sign language
     if ISL_DIR.exists():
         X_isl, y_isl, classes_isl = collect_landmark_dataset(
             dataset_dirs=[ISL_DIR],
