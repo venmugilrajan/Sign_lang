@@ -185,6 +185,8 @@ class LandmarkSignTranslator:
 
         is_dual_mode = self.model_configs.get(self.current_mode, {}).get("dual_hand", False)
 
+        hands_data = []
+
         for idx, landmarks in enumerate(results.hand_landmarks):
             h_name = "Right"
             score = 1.0
@@ -199,20 +201,18 @@ class LandmarkSignTranslator:
 
             # Extract 78-dim vector (In ISL mode, keep absolute coordinates without right-hand mirror)
             single_vec = self._extract_single_hand_vector(landmarks, w, h, h_name, apply_handedness_mirror=(not is_dual_mode))
-            if dominant_single_feat is None:
-                dominant_single_feat = single_vec
-
-            if h_name == "Left":
-                left_feat = single_vec
-            else:
-                right_feat = single_vec
+            wrist_x = landmarks[0].x
+            hands_data.append((wrist_x, single_vec))
 
         if is_dual_mode:
-            # Construct 156-dim feature vector
-            features = np.concatenate([left_feat, right_feat]).reshape(1, -1)
+            # Sort detected hands strictly by horizontal screen position (Left to Right)
+            hands_data.sort(key=lambda x: x[0])
+            slot1 = hands_data[0][1]
+            slot2 = hands_data[1][1] if len(hands_data) > 1 else np.zeros(78, dtype=np.float32)
+            features = np.concatenate([slot1, slot2]).reshape(1, -1)
         else:
             # Single hand 78-dim
-            features = dominant_single_feat.reshape(1, -1)
+            features = hands_data[0][1].reshape(1, -1)
 
         handedness_info = " + ".join(hand_info_list)
         return features, all_pixel_points, handedness_info
