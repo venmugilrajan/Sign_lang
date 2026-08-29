@@ -56,11 +56,11 @@ def calculate_angle_3d(a, b, c):
 
 class LandmarkSignTranslator:
     def __init__(self):
-        # 1. Initialize MediaPipe Hand Detector
+        # 1. Initialize MediaPipe Hand Detector (Supports up to 2 hands for ISL and dual-hand gestures)
         base_options = python.BaseOptions(model_asset_path=TASK_PATH)
         options = vision.HandLandmarkerOptions(
             base_options=base_options,
-            num_hands=1,
+            num_hands=2,
             min_hand_detection_confidence=MIN_DETECTION_CONF,
             min_hand_presence_confidence=MIN_DETECTION_CONF,
             min_tracking_confidence=MIN_DETECTION_CONF
@@ -79,6 +79,7 @@ class LandmarkSignTranslator:
         self.models = {}
         self.classes = {}
         self.encoders = {}
+        self.model_configs = {}
         self.current_mode = "asl"
         self._load_models()
 
@@ -96,7 +97,11 @@ class LandmarkSignTranslator:
                     self.models[mode] = data["model"]
                     self.classes[mode] = [str(c) for c in data["classes"]]
                     self.encoders[mode] = data.get("label_encoder", None)
-                    print(f"[+] Loaded {mode.upper()} landmark classifier ({len(data['classes'])} classes) from {path}")
+                    self.model_configs[mode] = {
+                        "num_features": data.get("num_features", data["model"].n_features_in_),
+                        "dual_hand": data.get("dual_hand", data.get("num_features", 78) > 78)
+                    }
+                    print(f"[+] Loaded {mode.upper()} landmark classifier ({len(data['classes'])} classes, {self.model_configs[mode]['num_features']} features, dual={self.model_configs[mode]['dual_hand']}) from {path}")
             else:
                 print(f"[!] Warning: {mode.upper()} model not found at {path}")
 
@@ -113,48 +118,24 @@ class LandmarkSignTranslator:
         print(f"[!] Cannot switch to {mode.upper()} (model not loaded).")
         return False
 
-    def extract_landmarks(self, raw_unflipped_frame, display_w, display_h):
-        """
-        Extracts landmarks and automatically normalizes Left vs Right hand geometry:
-        - If Left hand: mirrors x-coordinates relative to wrist so features match Right-Hand training set.
-        - Returns feature vector, display pixel points, and handedness label.
-        """
-        h, w = raw_unflipped_frame.shape[:2]
-        frame_rgb = cv2.cvtColor(raw_unflipped_frame, cv2.COLOR_BGR2RGB)
-        mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=frame_rgb)
-        results = self.detector.detect(mp_image)
-
-        if not results.hand_landmarks:
-            return None, None, None
-
-        landmarks = results.hand_landmarks[0]
-        handedness = results.handedness[0][0].category_name if results.handedness else "Right"
-        handedness_score = results.handedness[0][0].score if results.handedness else 1.0
-
-        # 1. Physical pixel coordinates on original unmirrored frame
+    def _extract_single_hand_vector(self, landmarks, w, h, handedness):
+        """Extracts 78-dim normalized and rotation-aligned feature vector for one hand."""
         pts = np.array([[lm.x * w, lm.y * h, lm.z * w] for lm in landmarks], dtype=np.float32)
 
-        # 2. Mirror pixel coordinates for onscreen visual drawing on flipped display frame
-        pixel_points_display = [(int((1.0 - lm.x) * display_w), int(lm.y * display_h)) for lm in landmarks]
-
-        # 3. Geometric Left-to-Right Normalization:
-        # If detected as Left Hand, mirror x relative to wrist so geometry matches right-hand training distribution
+        # Mirror Left hand to match Right hand dataset distribution
         if handedness == "Left":
             pts[:, 0] = pts[0, 0] - (pts[:, 0] - pts[0, 0])
 
-        # 4. Center on wrist
         wrist = pts[0]
         pts_centered = pts - wrist
 
-        # 5. Palm Scale
         middle_mcp = pts_centered[9]
         scale = np.linalg.norm(middle_mcp[:2])
         if scale < 1e-4:
             scale = 1.0
-
         pts_scaled = pts_centered / scale
 
-        # 6. 2D Palm Rotation Alignment
+        # 2D Palm vertical alignment
         angle = np.arctan2(pts_scaled[9, 0], -pts_scaled[9, 1])
         cos_a, sin_a = np.cos(angle), np.sin(angle)
         rot_matrix = np.array([[cos_a, sin_a], [-sin_a, cos_a]])
@@ -162,7 +143,6 @@ class LandmarkSignTranslator:
         pts_aligned = pts_scaled.copy()
         pts_aligned[:, :2] = np.dot(pts_scaled[:, :2], rot_matrix)
 
-        # 7. Joint Angles (15 flexion & knuckle angles)
         angles = [
             calculate_angle_3d(pts[0], pts[1], pts[2]),
             calculate_angle_3d(pts[1], pts[2], pts[3]),
@@ -180,10 +160,62 @@ class LandmarkSignTranslator:
             calculate_angle_3d(pts[17], pts[18], pts[19]),
             calculate_angle_3d(pts[18], pts[19], pts[20]),
         ]
+        return np.concatenate([pts_aligned.flatten(), angles])
 
-        features = np.concatenate([pts_aligned.flatten(), angles]).reshape(1, -1)
-        handedness_info = f"{handedness} ({handedness_score*100:.0f}%)"
-        return features, pixel_points_display, handedness_info
+    def extract_landmarks(self, raw_unflipped_frame, display_w, display_h):
+        """
+        Extracts landmarks for up to 2 hands:
+        - For ASL: Extracts 78-dim vector from the dominant hand.
+        - For ISL: Extracts 156-dim dual-hand vector (Left + Right hands).
+        - Returns feature vector, list of display landmark sets, and handedness info string.
+        """
+        h, w = raw_unflipped_frame.shape[:2]
+        frame_rgb = cv2.cvtColor(raw_unflipped_frame, cv2.COLOR_BGR2RGB)
+        mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=frame_rgb)
+        results = self.detector.detect(mp_image)
+
+        if not results.hand_landmarks:
+            return None, [], "None"
+
+        all_pixel_points = []
+        hand_info_list = []
+        left_feat = np.zeros(78, dtype=np.float32)
+        right_feat = np.zeros(78, dtype=np.float32)
+        dominant_single_feat = None
+
+        for idx, landmarks in enumerate(results.hand_landmarks):
+            h_name = "Right"
+            score = 1.0
+            if results.handedness and idx < len(results.handedness):
+                h_name = results.handedness[idx][0].category_name
+                score = results.handedness[idx][0].score
+
+            # Drawing coordinates for flipped screen
+            pts_display = [(int((1.0 - lm.x) * display_w), int(lm.y * display_h)) for lm in landmarks]
+            all_pixel_points.append(pts_display)
+            hand_info_list.append(f"{h_name} ({score*100:.0f}%)")
+
+            # Extract 78-dim vector
+            single_vec = self._extract_single_hand_vector(landmarks, w, h, h_name)
+            if dominant_single_feat is None:
+                dominant_single_feat = single_vec
+
+            if h_name == "Left":
+                left_feat = single_vec
+            else:
+                right_feat = single_vec
+
+        is_dual_mode = self.model_configs.get(self.current_mode, {}).get("dual_hand", False)
+
+        if is_dual_mode:
+            # Construct 156-dim feature vector
+            features = np.concatenate([left_feat, right_feat]).reshape(1, -1)
+        else:
+            # Single hand 78-dim
+            features = dominant_single_feat.reshape(1, -1)
+
+        handedness_info = " + ".join(hand_info_list)
+        return features, all_pixel_points, handedness_info
 
     def predict(self, features):
         """Predicts class, confidence and top-3 candidates."""
@@ -269,23 +301,23 @@ class LandmarkSignTranslator:
 def draw_hud(frame, state, mode_name, fps):
     h, w = frame.shape[:2]
 
-    # 1. ALWAYS Draw all 21 hand landmarks & skeleton whenever detected
+    # 1. ALWAYS Draw all detected hand skeletons (Supports 1 or 2 hands)
     if state["landmarks"]:
-        pts = state["landmarks"]
-        for p1_idx, p2_idx in HAND_CONNECTIONS:
-            cv2.line(frame, pts[p1_idx], pts[p2_idx], (0, 212, 255), 2, cv2.LINE_AA)
-        for i, pt in enumerate(pts):
-            if i in [4, 8, 12, 16, 20]:
-                color = (255, 107, 157)
-                r = 6
-            elif i == 0:
-                color = (255, 255, 255)
-                r = 7
-            else:
-                color = (34, 214, 122)
-                r = 5
-            cv2.circle(frame, pt, r, color, -1, cv2.LINE_AA)
-            cv2.circle(frame, pt, r + 2, (255, 255, 255), 1, cv2.LINE_AA)
+        for pts in state["landmarks"]:
+            for p1_idx, p2_idx in HAND_CONNECTIONS:
+                cv2.line(frame, pts[p1_idx], pts[p2_idx], (0, 212, 255), 2, cv2.LINE_AA)
+            for i, pt in enumerate(pts):
+                if i in [4, 8, 12, 16, 20]:
+                    color = (255, 107, 157)
+                    r = 6
+                elif i == 0:
+                    color = (255, 255, 255)
+                    r = 7
+                else:
+                    color = (34, 214, 122)
+                    r = 5
+                cv2.circle(frame, pt, r, color, -1, cv2.LINE_AA)
+                cv2.circle(frame, pt, r + 2, (255, 255, 255), 1, cv2.LINE_AA)
 
     # 2. Top Header Banner
     cv2.rectangle(frame, (0, 0), (w, 80), (14, 14, 26), -1)
