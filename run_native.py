@@ -87,6 +87,7 @@ class LandmarkSignTranslator:
         self.last_hand_seen_time = time.time()
         self.no_hand_active = True
         self.debug_mode = True
+        self.smooth_landmarks = []  # Temporal smoothing filter to eliminate jitter
 
     def _load_models(self):
         """Loads available ASL and ISL landmark classifiers."""
@@ -120,7 +121,10 @@ class LandmarkSignTranslator:
 
     def _extract_single_hand_vector(self, landmarks, w, h, handedness, apply_handedness_mirror=True):
         """Extracts 78-dim normalized and rotation-aligned feature vector for one hand."""
-        pts = np.array([[lm.x * w, lm.y * h, lm.z * w] for lm in landmarks], dtype=np.float32)
+        if isinstance(landmarks, np.ndarray):
+            pts = np.array([[landmarks[i, 0] * w, landmarks[i, 1] * h, landmarks[i, 2] * w] for i in range(21)], dtype=np.float32)
+        else:
+            pts = np.array([[lm.x * w, lm.y * h, lm.z * w] for lm in landmarks], dtype=np.float32)
 
         # Mirror Left hand to match Right hand dataset distribution (Only in single-hand ASL mode)
         if apply_handedness_mirror and handedness == "Left":
@@ -179,14 +183,10 @@ class LandmarkSignTranslator:
 
         all_pixel_points = []
         hand_info_list = []
-        left_feat = np.zeros(78, dtype=np.float32)
-        right_feat = np.zeros(78, dtype=np.float32)
-        dominant_single_feat = None
-
         is_dual_mode = self.model_configs.get(self.current_mode, {}).get("dual_hand", False)
-
         hands_data = []
 
+        current_raw_hands = []
         for idx, landmarks in enumerate(results.hand_landmarks):
             h_name = "Right"
             score = 1.0
@@ -194,14 +194,31 @@ class LandmarkSignTranslator:
                 h_name = results.handedness[idx][0].category_name
                 score = results.handedness[idx][0].score
 
+            # 21 x 3 numpy coordinate matrix
+            raw_pts = np.array([[lm.x, lm.y, lm.z] for lm in landmarks], dtype=np.float32)
+            current_raw_hands.append((raw_pts, h_name, score))
+
+        # Temporal Exponential Smoothing (alpha=0.65) to eliminate edge jitter
+        if len(self.smooth_landmarks) == len(current_raw_hands):
+            smoothed_hands = []
+            for i in range(len(current_raw_hands)):
+                prev_pts = self.smooth_landmarks[i][0]
+                curr_pts, h_name, score = current_raw_hands[i]
+                smooth_pts = 0.65 * curr_pts + 0.35 * prev_pts
+                smoothed_hands.append((smooth_pts, h_name, score))
+            self.smooth_landmarks = smoothed_hands
+        else:
+            self.smooth_landmarks = current_raw_hands
+
+        for smooth_pts, h_name, score in self.smooth_landmarks:
             # Drawing coordinates for flipped screen
-            pts_display = [(int((1.0 - lm.x) * display_w), int(lm.y * display_h)) for lm in landmarks]
+            pts_display = [(int((1.0 - pt[0]) * display_w), int(pt[1] * display_h)) for pt in smooth_pts]
             all_pixel_points.append(pts_display)
             hand_info_list.append(f"{h_name} ({score*100:.0f}%)")
 
-            # Extract 78-dim vector (In ISL mode, keep absolute coordinates without right-hand mirror)
-            single_vec = self._extract_single_hand_vector(landmarks, w, h, h_name, apply_handedness_mirror=(not is_dual_mode))
-            wrist_x = landmarks[0].x
+            # Extract 78-dim vector from smoothed points
+            single_vec = self._extract_single_hand_vector(smooth_pts, w, h, h_name, apply_handedness_mirror=(not is_dual_mode))
+            wrist_x = smooth_pts[0, 0]
             hands_data.append((wrist_x, single_vec))
 
         if is_dual_mode:
