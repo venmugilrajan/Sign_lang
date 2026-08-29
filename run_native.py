@@ -201,11 +201,12 @@ class LandmarkSignTranslator:
 
             # Extract 78-dim vector (In ISL mode, keep absolute coordinates without right-hand mirror)
             single_vec = self._extract_single_hand_vector(landmarks, w, h, h_name, apply_handedness_mirror=(not is_dual_mode))
-            wrist_x = landmarks[0].x
-            hands_data.append((wrist_x, single_vec))
+            # Use visual display horizontal coordinate (1.0 - x) so Left on user screen matches Slot 1
+            display_wrist_x = (1.0 - landmarks[0].x)
+            hands_data.append((display_wrist_x, single_vec))
 
         if is_dual_mode:
-            # Sort detected hands strictly by horizontal screen position (Left to Right)
+            # Sort detected hands strictly by visual screen position (Left to Right)
             hands_data.sort(key=lambda x: x[0])
             slot1 = hands_data[0][1]
             slot2 = hands_data[1][1] if len(hands_data) > 1 else np.zeros(78, dtype=np.float32)
