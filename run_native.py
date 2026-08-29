@@ -28,9 +28,9 @@ ASL_MODEL_PATH = os.path.join(BASE_DIR, "models", "asl_landmark_model.pkl")
 ISL_MODEL_PATH = os.path.join(BASE_DIR, "models", "isl_landmark_model.pkl")
 
 # Live Thresholds
-MIN_DETECTION_CONF = 0.50   # Detection confidence for MediaPipe
-CONF_THRESHOLD = 0.45       # Letter acceptance threshold
-STABLE_FRAMES_NEEDED = 6    # Consecutive frames required to confirm letter
+MIN_DETECTION_CONF = 0.25   # Lowered detection confidence to reliably detect 2 hands simultaneously
+CONF_THRESHOLD = 0.40       # Letter acceptance threshold
+STABLE_FRAMES_NEEDED = 5    # Consecutive frames required to confirm letter
 RELEASE_FRAMES_NEEDED = 2   # Frames to confirm hand release for double letters
 NO_HAND_WORD_TIMEOUT = 2.0  # Seconds to auto-commit word on hand drop
 
