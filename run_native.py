@@ -118,12 +118,12 @@ class LandmarkSignTranslator:
         print(f"[!] Cannot switch to {mode.upper()} (model not loaded).")
         return False
 
-    def _extract_single_hand_vector(self, landmarks, w, h, handedness):
+    def _extract_single_hand_vector(self, landmarks, w, h, handedness, apply_handedness_mirror=True):
         """Extracts 78-dim normalized and rotation-aligned feature vector for one hand."""
         pts = np.array([[lm.x * w, lm.y * h, lm.z * w] for lm in landmarks], dtype=np.float32)
 
-        # Mirror Left hand to match Right hand dataset distribution
-        if handedness == "Left":
+        # Mirror Left hand to match Right hand dataset distribution (Only in single-hand ASL mode)
+        if apply_handedness_mirror and handedness == "Left":
             pts[:, 0] = pts[0, 0] - (pts[:, 0] - pts[0, 0])
 
         wrist = pts[0]
@@ -183,6 +183,8 @@ class LandmarkSignTranslator:
         right_feat = np.zeros(78, dtype=np.float32)
         dominant_single_feat = None
 
+        is_dual_mode = self.model_configs.get(self.current_mode, {}).get("dual_hand", False)
+
         for idx, landmarks in enumerate(results.hand_landmarks):
             h_name = "Right"
             score = 1.0
@@ -195,8 +197,8 @@ class LandmarkSignTranslator:
             all_pixel_points.append(pts_display)
             hand_info_list.append(f"{h_name} ({score*100:.0f}%)")
 
-            # Extract 78-dim vector
-            single_vec = self._extract_single_hand_vector(landmarks, w, h, h_name)
+            # Extract 78-dim vector (In ISL mode, keep absolute coordinates without right-hand mirror)
+            single_vec = self._extract_single_hand_vector(landmarks, w, h, h_name, apply_handedness_mirror=(not is_dual_mode))
             if dominant_single_feat is None:
                 dominant_single_feat = single_vec
 
@@ -204,8 +206,6 @@ class LandmarkSignTranslator:
                 left_feat = single_vec
             else:
                 right_feat = single_vec
-
-        is_dual_mode = self.model_configs.get(self.current_mode, {}).get("dual_hand", False)
 
         if is_dual_mode:
             # Construct 156-dim feature vector
