@@ -4,18 +4,27 @@ A production-grade, real-time American Sign Language (ASL) and Indian Sign Langu
 
 ---
 
+## 📖 Sign Language Reference Charts
+
+### 🇺🇸 American Sign Language (ASL)
+![ASL Alphabet Chart](ASL_Alphabet_Chart.png)
+
+### 🇮🇳 Indian Sign Language (ISL - Dual Hand)
+![ISL Hand Signs Official](ISL_Hand_Signs_Official.png)
+
+---
+
 ## ✨ Features
-- **MediaPipe Landmark Classification**: Uses 21 normalized 3D hand keypoints invariant to lighting, skin tone, camera distance, and cluttered backgrounds.
+- **MediaPipe 3D Landmark & Joint Angle Classification**: Invariant to lighting, skin tone, distance, and cluttered backgrounds with rotation alignment and knuckle angle extraction.
 - **High Real-World Accuracy**:
-  - **ASL Model**: **94.55%** held-out test accuracy across 39 classes.
-  - **ISL Model**: **97.90%** held-out test accuracy across 35 classes.
-- **Letter-to-Word Auto-Framing**:
-  - **Stability Filter**: Eliminates flickering by requiring 8 consecutive stable frames above threshold.
-  - **Duplicate Spam Prevention**: Disallows continuous single-gesture spamming.
-  - **Word Boundary Detection**: Auto-commits word on `space` gesture or after a 2.0s no-hand timeout.
-  - **Spell Correction**: Integrated with `pyspellchecker` to fix minor letter mistakes into valid English vocabulary.
+  - **ASL Model**: **98.22%** held-out test accuracy (Single-hand rotation-aligned with left/right mirroring).
+  - **ISL Dual-Hand Model**: **99.64%** held-out test accuracy (156-dim spatial concatenated dual-hand architecture).
+- **Letter-to-Word Auto-Framing & Gesture Release**:
+  - **Stability Filter & Release Detection**: Supports consecutive double letters (e.g., 'HELLO', 'PLEASE') via delta-state monitoring.
+  - **Short-Word Spell Protection**: Protects common short vocabulary ('HI', 'NO', 'OK', 'GO', 'ME', 'MY') from over-correction.
+  - **Word Boundary Detection**: Auto-commits words on gesture release or after a 2.0s no-hand timeout.
 - **Dual Interfaces**:
-  1. **Native OpenCV Desktop HUD**: Live skeletal rendering, hold gauge, word buffer, and sentence tape.
+  1. **Native OpenCV Desktop HUD**: Live multi-hand skeletal rendering, hold gauge, word buffer, top-3 candidates, and sentence tape.
   2. **Browser Web Application**: Zero-dependency client-side neural forward pass + Flask backend.
 
 ---
