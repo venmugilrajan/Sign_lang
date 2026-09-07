@@ -13,6 +13,7 @@ ENV/
 asl-alphabet-train/
 indian sign language/
 sign language dataset 2/
+*.zip
 
 # Temporary / OS
 .DS_Store
