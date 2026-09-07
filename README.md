@@ -29,6 +29,14 @@ A production-grade, real-time American Sign Language (ASL) and Indian Sign Langu
 
 ---
 
+## 📦 Datasets & Downloads
+
+The complete sign language image datasets (ASL and ISL) used for training and testing can be downloaded from Google Drive:
+
+🔗 **[Download Complete Sign Language Datasets (Google Drive)](https://drive.google.com/file/d/1usAObfeq0qEYzMGS7rOtKCyRXdABCNEH/view?usp=sharing)**
+
+---
+
 ## 🚀 Quickstart
 
 ### 1. Install Dependencies
