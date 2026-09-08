@@ -6,6 +6,8 @@ GPU training via CUDA.
 """
 import os
 import time
+from pathlib import Path
+
 import torch
 import torch.nn as nn
 import torch.optim as optim
@@ -14,12 +16,14 @@ from torchvision import datasets, transforms
 from model import build_model, NORMALIZE_MEAN, NORMALIZE_STD, INPUT_SIZE
 
 # ─── Config ────────────────────────────────────────────────────────────────────
-DATASET_DIR  = r"r:\Projects\Sign Language\asl-alphabet-train"
-MODEL_SAVE   = r"r:\Projects\Sign Language\models\asl_model.pth"
-NUM_EPOCHS   = 15
-BATCH_SIZE   = 32
+BASE_DIR     = Path(__file__).resolve().parent
+DATASET_DIR  = str(BASE_DIR / "asl-alphabet-train")
+MODEL_SAVE   = str(BASE_DIR / "models" / "asl_model.pth")
+NUM_EPOCHS   = int(os.environ.get("EPOCHS", 15))
+BATCH_SIZE   = int(os.environ.get("BATCH_SIZE", 32))
 LR           = 1e-3
 VAL_SPLIT    = 0.2
+NUM_WORKERS  = int(os.environ.get("NUM_WORKERS", 4))
 DEVICE       = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 # ─── Transforms ────────────────────────────────────────────────────────────────
@@ -44,6 +48,9 @@ val_transforms = transforms.Compose([
 
 
 def get_dataloaders():
+    if not os.path.isdir(DATASET_DIR):
+        raise SystemExit(f"[!] ASL dataset not found at: {DATASET_DIR}")
+
     full_dataset = datasets.ImageFolder(DATASET_DIR, transform=train_transforms)
     class_names  = full_dataset.classes
     n_total      = len(full_dataset)
@@ -58,9 +65,9 @@ def get_dataloaders():
     val_set.dataset = datasets.ImageFolder(DATASET_DIR, transform=val_transforms)
 
     train_loader = DataLoader(train_set, batch_size=BATCH_SIZE, shuffle=True,
-                              num_workers=4, pin_memory=True)
+                              num_workers=NUM_WORKERS, pin_memory=True)
     val_loader   = DataLoader(val_set,   batch_size=BATCH_SIZE, shuffle=False,
-                              num_workers=4, pin_memory=True)
+                              num_workers=NUM_WORKERS, pin_memory=True)
 
     print(f"[ASL] Classes ({len(class_names)}): {class_names}")
     print(f"[ASL] Train: {n_train} | Val: {n_val}")

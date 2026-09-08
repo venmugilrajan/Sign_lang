@@ -18,3 +18,12 @@ sign language dataset 2/
 .DS_Store
 Thumbs.db
 *.log
+
+# Dataset archives
+*.zip
+
+# Model backups & regenerable caches
+*.bak
+*.leaky-bak
+*.cpu-partial-epoch1
+models/*_cache.pkl

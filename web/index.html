@@ -3,9 +3,12 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>SignLens — MediaPipe Sign Language Translator</title>
+  <meta name="color-scheme" content="dark" />
+  <title>SignLens</title>
+
   <link rel="preconnect" href="https://fonts.googleapis.com" />
-  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700;800&family=JetBrains+Mono:wght@500&display=swap" rel="stylesheet" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600;700&family=Geist+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="style.css" />
 
   <!-- MediaPipe -->
@@ -14,118 +17,166 @@
 </head>
 <body>
 
-  <div class="bg-orb orb-1"></div>
-  <div class="bg-orb orb-2"></div>
+<!-- ══ TOP BAR ══════════════════════════════════════════════════════════ -->
+<header class="topbar">
 
-  <!-- HEADER -->
-  <header class="header">
-    <div class="logo">🤟 <span>Sign<span class="accent">Lens</span></span></div>
-    <div class="header-center">
-      <div class="mode-toggle" id="mode-toggle">
-        <button class="mode-btn active" data-mode="asl" id="btn-asl">🇺🇸 ASL</button>
-        <button class="mode-btn" data-mode="isl" id="btn-isl">🇮🇳 ISL</button>
-        <div class="mode-slider"></div>
-      </div>
-    </div>
+  <div class="brand">
+    <!-- Single geometric mark: three ascending strokes, a hand reading as signal. -->
+    <svg class="brand-mark" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+      <rect x="3"  y="13" width="4" height="8" rx="2" />
+      <rect x="10" y="7"  width="4" height="14" rx="2" />
+      <rect x="17" y="3"  width="4" height="18" rx="2" />
+    </svg>
+    <span class="brand-name">SignLens</span>
+  </div>
+
+  <div class="mode-toggle" id="mode-toggle" role="group" aria-label="Sign language">
+    <button class="mode-btn active" data-mode="asl" id="btn-asl" aria-pressed="true">ASL</button>
+    <button class="mode-btn" data-mode="isl" id="btn-isl" aria-pressed="false">ISL</button>
+    <span class="mode-slider" aria-hidden="true"></span>
+  </div>
+
+  <div class="topbar-right">
+    <button class="ghost-btn" popovertarget="panel-settings">Settings</button>
+    <button class="ghost-btn" popovertarget="panel-help">Shortcuts</button>
     <div class="status-pill" id="status-pill">
-      <span class="status-dot"></span>
-      <span id="status-text">Connecting…</span>
+      <span class="status-dot" aria-hidden="true"></span>
+      <span id="status-text" role="status" aria-live="polite">Connecting</span>
     </div>
-  </header>
+  </div>
+</header>
 
-  <!-- MAIN -->
-  <main class="main">
+<!-- ══ WORKSPACE ════════════════════════════════════════════════════════ -->
+<main class="workspace">
 
-    <!-- LEFT: MediaPipe Camera Canvas -->
-    <div class="cam-panel glass">
+  <!-- ── Camera stage ────────────────────────────────────────────────── -->
+  <section class="stage" aria-label="Camera">
 
-      <!-- Hidden video input for MediaPipe -->
-      <video id="webcam-video" autoplay playsinline muted style="display:none;"></video>
-
-      <!-- Main display canvas (video + skeleton drawn here) -->
+    <div class="viewport">
+      <video id="webcam-video" autoplay playsinline muted></video>
       <canvas id="display-canvas"></canvas>
 
-      <!-- Hand not detected overlay -->
-      <div class="no-hand-overlay" id="no-hand-overlay">
-        <div class="no-hand-icon">✋</div>
-        <div class="no-hand-text">Show your hand to the camera</div>
-      </div>
-
-      <!-- Detected letter bottom bar -->
-      <div class="letter-bar">
-        <div class="letter-bar-left">
-          <div class="detected-letter" id="detected-letter">—</div>
-          <div class="detected-sub" id="detected-conf">Waiting…</div>
-        </div>
-        <div class="letter-bar-right">
-          <div class="streak-wrap">
-            <div class="streak-track"><div class="streak-fill" id="streak-bar"></div></div>
-            <div class="streak-label" id="streak-label">0 / 3</div>
-          </div>
-          <div class="hand-badge" id="hand-badge">NO HAND</div>
-        </div>
-      </div>
-
-      <!-- Cam controls -->
-      <div class="cam-controls">
-        <button class="ctrl-btn" id="btn-pause-detection">⏸ Pause</button>
-        <button class="ctrl-btn active-btn" id="btn-camera-toggle">📷 Stop Camera</button>
+      <div class="no-hand-overlay visible" id="no-hand-overlay">
+        <div class="idle-title">Show your hand to the camera</div>
+        <div class="idle-sub">Tracking starts as soon as a hand is in frame.</div>
       </div>
     </div>
 
-    <!-- RIGHT: Word + Sentence output -->
-    <div class="output-panel">
+    <!-- Live readout: the one thing the user actually watches -->
+    <div class="readout">
 
-      <!-- Current word -->
-      <div class="word-card glass">
-        <div class="card-label">BUILDING WORD</div>
-        <div class="word-display" id="word-display">
-          <span class="ph">Start signing…</span>
+      <div class="readout-dial">
+        <div class="dial-ring" aria-hidden="true"></div>
+        <div class="detected-letter" id="detected-letter" role="status" aria-live="polite" aria-atomic="true"></div>
+      </div>
+
+      <div class="readout-body">
+        <div class="readout-line">
+          <span class="detected-sub" id="detected-conf">Waiting</span>
+          <span class="hand-badge" id="hand-badge" role="status" aria-live="polite">NO HAND</span>
         </div>
-        <div class="word-actions">
-          <button class="btn-ghost" id="btn-backspace">⌫ Delete</button>
-          <button class="btn-ghost" id="btn-add-space">␣ Next Word</button>
-          <button class="btn-danger" id="btn-clear-word">Clear</button>
+
+        <div class="streak-row">
+          <div class="streak-track"><div class="streak-fill" id="streak-bar"></div></div>
+          <span class="streak-label" id="streak-label">0 / 5</span>
         </div>
       </div>
 
-      <!-- Sentence -->
-      <div class="sentence-card glass">
-        <div class="card-label-row">
-          <span class="card-label">SENTENCE</span>
-          <div class="row-btns">
-            <button class="icon-btn" id="btn-speak" title="Speak">🔊</button>
-            <button class="icon-btn" id="btn-copy" title="Copy">📋</button>
-          </div>
-        </div>
-        <div class="sentence-display" id="sentence-display">
-          <em class="ph">Your sentence will appear here…</em>
-        </div>
-        <div class="word-chips" id="word-chips"></div>
-        <button class="btn-danger wide" id="btn-clear-sentence">🗑 Clear All</button>
+      <div class="stage-actions">
+        <button class="ctrl-btn" id="btn-pause-detection">Pause</button>
+        <button class="ctrl-btn active-btn" id="btn-camera-toggle">Stop Camera</button>
       </div>
-
-      <!-- Instructions -->
-      <div class="info-card glass">
-        <div class="card-label">HOW IT WORKS</div>
-        <div class="steps">
-          <div class="step"><span>✋</span><span>Show hand sign to camera</span></div>
-          <div class="step"><span>⚡</span><span>MediaPipe tracks your hand joints live</span></div>
-          <div class="step"><span>🔁</span><span>Hold same sign → letter auto-captured</span></div>
-          <div class="step"><span>✊</span><span>Drop hand → word saved to sentence</span></div>
-        </div>
-        <div class="shortcuts">
-          <span class="key">Space</span> next word &nbsp;
-          <span class="key">⌫</span> delete &nbsp;
-          <span class="key">1</span> ASL &nbsp;
-          <span class="key">2</span> ISL
-        </div>
-      </div>
-
     </div>
-  </main>
+  </section>
 
-  <div class="toast" id="toast"></div>
-  <script src="app.js"></script>
+  <!-- ── Output rail ─────────────────────────────────────────────────── -->
+  <aside class="rail">
+
+    <article class="panel" id="word-panel">
+      <header class="panel-head">
+        <h2 class="panel-title">Building word</h2>
+      </header>
+
+      <div class="word-display" id="word-display">
+        <span class="ph">Start signing</span>
+      </div>
+
+      <div class="panel-actions">
+        <button class="btn" id="btn-backspace">Delete</button>
+        <button class="btn" id="btn-add-space">Next word</button>
+        <button class="btn btn-quiet" id="btn-clear-word">Clear</button>
+      </div>
+    </article>
+
+    <article class="panel panel-grow" id="sentence-panel">
+      <header class="panel-head">
+        <h2 class="panel-title">Sentence</h2>
+        <div class="panel-head-actions">
+          <button class="btn btn-sm" id="btn-speak">Speak</button>
+          <button class="btn btn-sm" id="btn-copy">Copy</button>
+        </div>
+      </header>
+
+      <div class="sentence-display" id="sentence-display" role="status" aria-live="polite">
+        <em class="ph">Your sentence will appear here</em>
+      </div>
+
+      <div class="word-chips" id="word-chips"></div>
+
+      <button class="btn btn-danger" id="btn-clear-sentence">Clear all</button>
+    </article>
+  </aside>
+</main>
+
+<!-- ══ SETTINGS (top layer) ═════════════════════════════════════════════ -->
+<div popover id="panel-settings" class="sheet">
+  <header class="sheet-head">
+    <h2 class="sheet-title">Detection</h2>
+    <button class="ghost-btn" popovertarget="panel-settings" popovertargetaction="hide">Close</button>
+  </header>
+
+  <div class="field">
+    <label for="set-confidence">Minimum confidence</label>
+    <div class="field-row">
+      <input type="range" id="set-confidence" min="30" max="95" step="5" value="65" />
+      <output class="field-value" id="out-confidence">65%</output>
+    </div>
+    <p class="field-help">Predictions below this are ignored. Raise it if letters are captured too eagerly.</p>
+  </div>
+
+  <div class="field">
+    <label for="set-streak">Frames to confirm</label>
+    <div class="field-row">
+      <input type="range" id="set-streak" min="2" max="12" step="1" value="5" />
+      <output class="field-value" id="out-streak">5</output>
+    </div>
+    <p class="field-help">How long the same sign must hold before the letter is captured.</p>
+  </div>
+</div>
+
+<!-- ══ SHORTCUTS (top layer) ════════════════════════════════════════════ -->
+<div popover id="panel-help" class="sheet">
+  <header class="sheet-head">
+    <h2 class="sheet-title">How it works</h2>
+    <button class="ghost-btn" popovertarget="panel-help" popovertargetaction="hide">Close</button>
+  </header>
+
+  <ol class="steps">
+    <li><span class="step-n">1</span> Show a hand sign to the camera.</li>
+    <li><span class="step-n">2</span> Hold it steady while the ring fills.</li>
+    <li><span class="step-n">3</span> The letter is captured and added to the word.</li>
+    <li><span class="step-n">4</span> Drop your hand to commit the word to the sentence.</li>
+  </ol>
+
+  <div class="keys">
+    <div class="key-row"><kbd>Space</kbd><span>Commit current word</span></div>
+    <div class="key-row"><kbd>Backspace</kbd><span>Delete last letter</span></div>
+    <div class="key-row"><kbd>1</kbd><span>Switch to ASL</span></div>
+    <div class="key-row"><kbd>2</kbd><span>Switch to ISL</span></div>
+  </div>
+</div>
+
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+<script src="app.js"></script>
 </body>
 </html>

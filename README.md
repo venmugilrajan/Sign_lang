@@ -8,7 +8,28 @@ A production-grade, real-time American Sign Language (ASL) and Indian Sign Langu
 - **MediaPipe Landmark Classification**: Uses 21 normalized 3D hand keypoints invariant to lighting, skin tone, camera distance, and cluttered backgrounds.
 - **High Real-World Accuracy**:
   - **ASL Model**: **94.55%** held-out test accuracy across 39 classes.
-  - **ISL Model**: **97.90%** held-out test accuracy across 35 classes.
+  - **ISL Model (landmark MLP)**: **97.30%** held-out test accuracy across 35 classes,
+    measured with a *frame-block* split (see caveat below). This is the trustworthy
+    reported figure for ISL.
+
+> **Accuracy caveat — read before quoting these numbers.**
+> The ISL dataset contains ~1200 *sequential video frames* per class from a single
+> recording session (one signer, one background, one lighting setup). Splitting those
+> frames randomly puts near-identical neighbours on both sides of the split and inflates
+> accuracy badly: the landmark model scored **99.94%** that way versus **97.30%** under a
+> correct contiguous-block split, and the pixel CNN scored **100.0%**.
+>
+> Block splitting removes *adjacent-frame* leakage but cannot remove *session* leakage,
+> because there is only one session per class. Measured: a held-out frame sits 2.7–4.9
+> (mean absolute pixel delta) from its nearest same-class training frame but 25–34 from
+> any other class, and a maximal 600-frame temporal halving only widens that to 4.1–10.6.
+>
+> Consequently the **pixel CNN's ISL accuracy (`models/isl_model.pth`) is unvalidated** —
+> it can exploit background and lighting shortcuts, so its number is an upper bound, not a
+> measured generalization result. The **landmark model's 97.30%** is the figure to quote,
+> since its 156-D geometric features discard background and lighting. A genuine
+> generalization number requires a second recording session with a different
+> signer/background, which this dataset does not contain.
 - **Letter-to-Word Auto-Framing**:
   - **Stability Filter**: Eliminates flickering by requiring 8 consecutive stable frames above threshold.
   - **Duplicate Spam Prevention**: Disallows continuous single-gesture spamming.

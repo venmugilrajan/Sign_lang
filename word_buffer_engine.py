@@ -101,6 +101,7 @@ class TwoTierSpellCorrector:
     def __init__(self, custom_vocab: list = None):
         self.custom_vocab = [w.upper() for w in (custom_vocab or DEFAULT_SIGN_VOCABULARY)]
         self.general_spell = SpellChecker()
+        self.last_tier = "-"   # diagnostic: which tier produced the last correction
 
     def add_words(self, words: list):
         """Add additional words to custom vocabulary."""
@@ -116,10 +117,12 @@ class TwoTierSpellCorrector:
         """
         raw = raw_word.strip().upper()
         if not raw:
+            self.last_tier = "empty"
             return "", False, []
 
         # 0. Short valid words check (e.g. 'HI', 'NO', 'OK', 'YES', 'ME', 'MY', 'GO')
         if raw in SHORT_VALID_WORDS or raw in self.custom_vocab:
+            self.last_tier = "T0 short-word/vocab-exact (protected)"
             return raw, False, []
 
         # Strict edit distance threshold based on word length:
@@ -146,6 +149,9 @@ class TwoTierSpellCorrector:
             vocab_matches.sort(key=lambda x: (x[2], x[1], abs(len(x[0]) - len(raw))))
             best_match = vocab_matches[0][0]
             suggestions = [m[0] for m in vocab_matches[:3]]
+            self.last_tier = (f"T1 custom-vocab (raw_dist={vocab_matches[0][1]}, "
+                              f"weighted={vocab_matches[0][2]:.2f}, max_allowed={max_allowed_dist}, "
+                              f"runners-up={vocab_matches[1:3]})")
             return best_match, (best_match != raw), suggestions
 
         # Tier 2: General English Dictionary fallback (only if allowed dist > 0)
@@ -154,6 +160,8 @@ class TwoTierSpellCorrector:
             if gen_corr:
                 gen_corr_upper = gen_corr.upper()
                 if levenshtein_distance(raw, gen_corr_upper) <= max_allowed_dist:
+                    self.last_tier = (f"T2 general-dict (dist={levenshtein_distance(raw, gen_corr_upper)}, "
+                                      f"max_allowed={max_allowed_dist})")
                     return gen_corr_upper, True, [gen_corr_upper]
 
         # Tier 3: No close match found — preserve raw buffer and suggest nearest custom words
@@ -166,6 +174,7 @@ class TwoTierSpellCorrector:
         all_candidates.sort(key=lambda x: x[1])
         suggestions = [c[0] for c in all_candidates[:3]]
 
+        self.last_tier = f"T3 raw-preserved (no match within max_allowed={max_allowed_dist})"
         return raw, False, suggestions
 
 
@@ -194,6 +203,8 @@ class WordBufferStateMachine:
         # Current candidate stream
         self.candidate_letter = ""
         self.candidate_count = 0
+
+        self.last_top3 = []   # diagnostic: top-3 candidates of the most recent frame
 
     @property
     def current_word(self) -> str:
@@ -263,7 +274,8 @@ class WordBufferStateMachine:
             char_upper = letter.upper()
             self.word_letters.append(char_upper)
             self.letter_confidences.append(conf)
-            print(f"[WORD BUFFER] Confirmed '{char_upper}' (conf: {conf*100:.1f}%) | Buffer after append: {self.word_letters} -> '{self.current_word}'")
+            top3_str = ", ".join(f"{l}:{p*100:.1f}%" for l, p in self.last_top3) or "n/a"
+            print(f"[WORD BUFFER] Confirmed '{char_upper}' (conf: {conf*100:.1f}%) | Top3: [{top3_str}] | Buffer after append: {self.word_letters} -> '{self.current_word}'")
             return char_upper
 
     def commit_word(self):
@@ -273,7 +285,11 @@ class WordBufferStateMachine:
             return
 
         final_word, is_corr, suggestions = self.corrector.correct(raw_word, self.letter_confidences)
-        print(f"[WORD COMMIT] Raw: '{raw_word}' -> Final: '{final_word}' (Corrected: {is_corr}) | Sentence: {self.sentence + [final_word]}")
+        confs_str = ", ".join(f"{c*100:.0f}%" for c in self.letter_confidences)
+        print(f"[WORD COMMIT] Raw: '{raw_word}' -> Final: '{final_word}' (Corrected: {is_corr}, "
+              f"edit_dist={levenshtein_distance(raw_word.upper(), final_word)}) | "
+              f"Tier: {self.corrector.last_tier} | Letter confs: [{confs_str}] | "
+              f"Sentence: {self.sentence + [final_word]}")
         self.sentence.append(final_word)
 
         # Reset word buffer

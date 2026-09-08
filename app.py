@@ -131,18 +131,29 @@ def predict_landmarks():
     if mode not in landmark_models:
         return jsonify({"error": f"Landmark model '{mode}' not loaded"}), 404
 
-    if not features or len(features) != 63:
-        return jsonify({"error": "Invalid landmark features vector. Expected 63 floats."}), 400
+    if not features or len(features) not in (78, 156):
+        return jsonify({
+            "error": f"Invalid landmark features vector. Expected 78 (single-hand) "
+                     f"or 156 (dual-hand) floats, got {len(features) if features else 0}."
+        }), 400
+
+    clf = landmark_models[mode]
+    expected = getattr(clf, "n_features_in_", len(features))
+    if len(features) != expected:
+        return jsonify({
+            "error": f"Model '{mode}' expects {expected} features, got {len(features)}."
+        }), 400
 
     try:
-        clf = landmark_models[mode]
+        # classes_ holds LabelEncoder integers; landmark_labels holds the real names.
+        labels = [str(c) for c in landmark_labels[mode]]
         probs = clf.predict_proba([features])[0]
         top_idx = int(np.argmax(probs))
-        top_label = clf.classes_[top_idx]
+        top_label = labels[top_idx]
         top_conf = float(probs[top_idx])
 
         top3_indices = np.argsort(probs)[::-1][:3]
-        top3 = [{"label": clf.classes_[i], "confidence": round(float(probs[i]), 4)} for i in top3_indices]
+        top3 = [{"label": labels[i], "confidence": round(float(probs[i]), 4)} for i in top3_indices]
 
         return jsonify({
             "mode": mode,

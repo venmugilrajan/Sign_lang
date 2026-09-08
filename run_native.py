@@ -13,7 +13,13 @@ import os
 import cv2
 import time
 import pickle
+import threading
 import numpy as np
+
+try:
+    import pyttsx3
+except ImportError:
+    pyttsx3 = None
 
 import mediapipe as mp
 from mediapipe.tasks import python
@@ -43,6 +49,27 @@ HAND_CONNECTIONS = [
     (0, 17), (17, 18), (18, 19), (19, 20), # Pinky
     (5, 9), (9, 13), (13, 17)              # Palm base
 ]
+
+
+# ─── Offline Text-to-Speech ────────────────────────────────────────────────────
+_tts_engine = pyttsx3.init() if pyttsx3 else None
+_tts_lock = threading.Lock()   # pyttsx3 run loops cannot overlap
+
+
+def speak(word: str):
+    """Speaks a word on a detached daemon thread so the HUD never blocks."""
+    if not _tts_engine or not word:
+        return
+
+    def _run():
+        with _tts_lock:
+            try:
+                _tts_engine.say(word)
+                _tts_engine.runAndWait()
+            except Exception as e:
+                print(f"[TTS] Failed to speak '{word}': {e}")
+
+    threading.Thread(target=_run, daemon=True).start()
 
 
 def calculate_angle_3d(a, b, c):
@@ -89,6 +116,7 @@ class LandmarkSignTranslator:
         self.last_hand_seen_time = time.time()
         self.no_hand_active = True
         self.debug_mode = True
+        self._spoken_count = 0   # words already sent to TTS
 
     def _load_models(self):
         """Loads available ASL and ISL landmark classifiers."""
@@ -137,6 +165,12 @@ class LandmarkSignTranslator:
             scale = 1.0
         pts_scaled = pts_centered / scale
 
+        # KNOWN BUG (deferred): this rotates by +angle, which DOUBLES the palm angle
+        # instead of cancelling it (20 deg hand rotation -> 40 deg residual, 90 -> inverted),
+        # so these features are not rotation-invariant. Fix is one sign:
+        #     rot = np.array([[cos_a, -sin_a], [sin_a, cos_a]])
+        # Do NOT apply it alone -- every shipped .pkl/.json was trained on the broken
+        # transform, so ASL and both ISL variants must be retrained together.
         # 2D Palm vertical alignment
         angle = np.arctan2(pts_scaled[9, 0], -pts_scaled[9, 1])
         cos_a, sin_a = np.cos(angle), np.sin(angle)
@@ -269,6 +303,7 @@ class LandmarkSignTranslator:
             raw_conf = conf
 
             # Feed prediction into word-buffer state machine
+            self.state_machine.last_top3 = top3   # diagnostic: logged on each confirmed letter
             sm_status = self.state_machine.feed_frame(raw_pred, raw_conf, min_conf=CONF_THRESHOLD)
         else:
             sm_status = self.state_machine.feed_frame("NO HAND", 0.0, min_conf=CONF_THRESHOLD)
@@ -279,6 +314,15 @@ class LandmarkSignTranslator:
                     self.state_machine.commit_word()
                 self.no_hand_active = True
                 sm_status = self.state_machine._get_status()
+
+        # Speak anything newly committed. Watching the sentence covers all three
+        # commit paths -- 'space' gesture (fires inside the state machine),
+        # no-hand timeout, and the manual 's' key -- from one place.
+        committed = self.state_machine.sentence
+        if len(committed) > self._spoken_count:
+            for word in committed[self._spoken_count:]:
+                speak(word)
+        self._spoken_count = len(committed)
 
         return {
             "hand_present": features is not None,
@@ -307,6 +351,58 @@ class LandmarkSignTranslator:
 
 
 # ─── UI HUD Drawing ────────────────────────────────────────────────────────────
+# Palette shared with web/style.css so the desktop HUD and the browser UI read as
+# one product. OpenCV takes BGR, but the previous code passed the web RGB hex
+# values straight through -- so "cyan" #00d4ff was drawn as (0,212,255), which is
+# orange on screen. _bgr() does the conversion once, correctly.
+def _bgr(hex_color):
+    """'#7c6aff' -> (255, 106, 124) BGR tuple for OpenCV."""
+    h = hex_color.lstrip("#")
+    r, g, b = int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16)
+    return (b, g, r)
+
+
+C_BG      = _bgr("#07080f")   # page ground
+C_PANEL   = _bgr("#0d1124")   # glass fill
+C_HAIRLINE= _bgr("#2d3566")   # 1px border
+C_HI      = _bgr("#454f80")   # top-edge highlight
+C_TEXT    = _bgr("#eef0ff")
+C_DIM     = _bgr("#7a88b8")
+C_MUTED   = _bgr("#3e4870")
+C_PURPLE  = _bgr("#a084ff")
+C_CYAN    = _bgr("#00d4ff")
+C_GREEN   = _bgr("#22d67a")
+C_PINK    = _bgr("#ff6b9d")
+C_YELLOW  = _bgr("#ffe066")
+C_ORANGE  = _bgr("#ff9240")
+
+PANEL_ALPHA = 0.72   # matches --glass rgba(13,17,36,0.72)
+
+
+def _panel(frame, x1, y1, x2, y2, alpha=PANEL_ALPHA, accent=None):
+    """Translucent glass panel with a hairline border and a top highlight.
+
+    Blending against the live frame is what makes it read as glass rather than
+    a flat opaque box -- the OpenCV analogue of backdrop-filter: blur().
+    """
+    x1, y1 = max(0, x1), max(0, y1)
+    x2, y2 = min(frame.shape[1], x2), min(frame.shape[0], y2)
+    if x2 <= x1 or y2 <= y1:
+        return
+    roi = frame[y1:y2, x1:x2]
+    fill = np.full(roi.shape, C_PANEL, dtype=np.uint8)
+    cv2.addWeighted(fill, alpha, roi, 1 - alpha, 0, roi)
+    cv2.rectangle(frame, (x1, y1), (x2, y2), accent or C_HAIRLINE, 1, cv2.LINE_AA)
+    # single bright pixel row along the top edge = the "lit" glass edge
+    cv2.line(frame, (x1 + 1, y1 + 1), (x2 - 1, y1 + 1), C_HI, 1, cv2.LINE_AA)
+
+
+def _label(frame, text, org, color=None, scale=0.42):
+    """Small dim caption -- the eyebrow above a value."""
+    cv2.putText(frame, text, org, cv2.FONT_HERSHEY_SIMPLEX, scale,
+                color or C_DIM, 1, cv2.LINE_AA)
+
+
 def draw_hud(frame, state, mode_name, fps):
     h, w = frame.shape[:2]
 
@@ -314,104 +410,96 @@ def draw_hud(frame, state, mode_name, fps):
     if state["landmarks"]:
         for pts in state["landmarks"]:
             for p1_idx, p2_idx in HAND_CONNECTIONS:
-                cv2.line(frame, pts[p1_idx], pts[p2_idx], (0, 212, 255), 2, cv2.LINE_AA)
+                cv2.line(frame, pts[p1_idx], pts[p2_idx], C_CYAN, 2, cv2.LINE_AA)
             for i, pt in enumerate(pts):
                 if i in [4, 8, 12, 16, 20]:
-                    color = (255, 107, 157)
+                    color = C_PINK
                     r = 6
                 elif i == 0:
                     color = (255, 255, 255)
                     r = 7
                 else:
-                    color = (34, 214, 122)
+                    color = C_GREEN
                     r = 5
                 cv2.circle(frame, pt, r, color, -1, cv2.LINE_AA)
                 cv2.circle(frame, pt, r + 2, (255, 255, 255), 1, cv2.LINE_AA)
 
     # 2. Top Header Banner
-    cv2.rectangle(frame, (0, 0), (w, 80), (14, 14, 26), -1)
-    cv2.line(frame, (0, 80), (w, 80), (45, 45, 75), 2)
+    _panel(frame, -1, -1, w + 1, 80, alpha=0.80)
+    cv2.line(frame, (0, 80), (w, 80), C_PURPLE, 1, cv2.LINE_AA)
 
     # Title & Controls
     cv2.putText(frame, f"SignLens | {mode_name.upper()} Mode", (20, 32),
-                cv2.FONT_HERSHEY_DUPLEX, 0.75, (255, 255, 255), 1, cv2.LINE_AA)
+                cv2.FONT_HERSHEY_DUPLEX, 0.75, C_TEXT, 1, cv2.LINE_AA)
     cv2.putText(frame, f"FPS: {fps:.0f} | [1] ASL  [2] ISL  [d] Debug  [b] Del  [s] Space  [c] Clear  [q] Quit", (20, 60),
-                cv2.FONT_HERSHEY_SIMPLEX, 0.42, (170, 170, 210), 1, cv2.LINE_AA)
+                cv2.FONT_HERSHEY_SIMPLEX, 0.42, C_DIM, 1, cv2.LINE_AA)
 
     # Hand Presence & Handedness Badge (Top Right)
     hand_badge = f"{state['handedness']} Hand" if state["hand_present"] else "NO HAND"
-    badge_col = (34, 214, 122) if state["hand_present"] else (100, 100, 120)
-    cv2.rectangle(frame, (w - 220, 15), (w - 20, 48), (25, 25, 45), -1)
-    cv2.rectangle(frame, (w - 220, 15), (w - 20, 48), badge_col, 1)
+    badge_col = C_GREEN if state["hand_present"] else C_MUTED
+    _panel(frame, w - 220, 15, w - 20, 48, alpha=0.55, accent=badge_col)
     cv2.putText(frame, hand_badge, (w - 205, 37),
                 cv2.FONT_HERSHEY_SIMPLEX, 0.45, badge_col, 1, cv2.LINE_AA)
 
     # 3. Live Sign Card (Left Overlay)
-    cv2.rectangle(frame, (20, 100), (280, 240), (18, 18, 35), -1)
-    cv2.rectangle(frame, (20, 100), (280, 240), (60, 60, 100), 1)
+    _panel(frame, 20, 100, 280, 240)
 
     raw_pred = state["raw_pred"]
     raw_conf = state["raw_conf"] * 100
 
-    cv2.putText(frame, "LIVE SIGN", (35, 125),
-                cv2.FONT_HERSHEY_SIMPLEX, 0.45, (160, 132, 255), 1, cv2.LINE_AA)
+    _label(frame, "LIVE SIGN", (35, 125), C_PURPLE, 0.45)
 
     if state["hand_present"]:
-        pred_col = (34, 214, 122) if raw_conf >= (CONF_THRESHOLD * 100) else (0, 200, 255)
+        pred_col = C_GREEN if raw_conf >= (CONF_THRESHOLD * 100) else C_YELLOW
         cv2.putText(frame, raw_pred, (35, 175),
                     cv2.FONT_HERSHEY_DUPLEX, 1.4, pred_col, 2, cv2.LINE_AA)
-        cv2.putText(frame, f"Confidence: {raw_conf:.1f}%", (35, 202),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.45, (220, 220, 220), 1, cv2.LINE_AA)
+        _label(frame, f"Confidence: {raw_conf:.1f}%", (35, 202), C_TEXT, 0.45)
 
         # Hold Progress Bar
         bar_w = int(220 * state["hold_progress"])
-        cv2.rectangle(frame, (35, 215), (255, 225), (35, 35, 60), -1)
+        cv2.rectangle(frame, (35, 215), (255, 225), C_MUTED, -1, cv2.LINE_AA)
         if bar_w > 0:
-            cv2.rectangle(frame, (35, 215), (35 + bar_w, 225), (34, 214, 122), -1)
+            cv2.rectangle(frame, (35, 215), (35 + bar_w, 225), pred_col, -1, cv2.LINE_AA)
     else:
         cv2.putText(frame, "—", (35, 175),
-                    cv2.FONT_HERSHEY_DUPLEX, 1.4, (100, 100, 120), 2, cv2.LINE_AA)
-        cv2.putText(frame, "Waiting for hand...", (35, 205),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.45, (140, 140, 160), 1, cv2.LINE_AA)
+                    cv2.FONT_HERSHEY_DUPLEX, 1.4, C_MUTED, 2, cv2.LINE_AA)
+        _label(frame, "Waiting for hand...", (35, 205), C_MUTED, 0.45)
 
     # 4. Diagnostic Top-3 Box (Right Overlay when Debug Mode is ON)
     if state.get("debug_mode") and state["hand_present"] and state["top3"]:
-        cv2.rectangle(frame, (w - 260, 100), (w - 20, 210), (18, 18, 35), -1)
-        cv2.rectangle(frame, (w - 260, 100), (w - 20, 210), (60, 60, 100), 1)
-        cv2.putText(frame, f"TOP PREDICTIONS ({state['handedness']})", (w - 250, 125),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.38, (0, 212, 255), 1, cv2.LINE_AA)
+        _panel(frame, w - 260, 100, w - 20, 210)
+        _label(frame, f"TOP PREDICTIONS ({state['handedness']})", (w - 250, 125), C_CYAN, 0.38)
         for idx, (label, prob) in enumerate(state["top3"]):
             y_pos = 150 + idx * 22
-            col = (34, 214, 122) if idx == 0 and prob >= CONF_THRESHOLD else (200, 200, 200)
+            col = C_GREEN if idx == 0 and prob >= CONF_THRESHOLD else C_DIM
             cv2.putText(frame, f"{idx+1}. Letter {label}: {prob*100:.1f}%", (w - 245, y_pos),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.45, col, 1, cv2.LINE_AA)
 
     # 5. Bottom Word & Sentence Dashboard
-    cv2.rectangle(frame, (0, h - 120), (w, h), (14, 14, 26), -1)
-    cv2.line(frame, (0, h - 120), (w, h - 120), (45, 45, 75), 2)
+    _panel(frame, -1, h - 120, w + 1, h + 1, alpha=0.80)
+    cv2.line(frame, (0, h - 120), (w, h - 120), C_PURPLE, 1, cv2.LINE_AA)
 
     # Building Word Bar
     word = state["word_buffer"] if state["word_buffer"] else "(Signing...)"
-    word_col = (0, 212, 255) if state["word_buffer"] else (120, 120, 150)
-    cv2.putText(frame, "BUILDING WORD:", (25, h - 85),
-                cv2.FONT_HERSHEY_SIMPLEX, 0.45, (160, 160, 200), 1, cv2.LINE_AA)
+    word_col = C_CYAN if state["word_buffer"] else C_MUTED
+    _label(frame, "BUILDING WORD:", (25, h - 85), C_DIM, 0.45)
     cv2.putText(frame, word, (165, h - 82),
                 cv2.FONT_HERSHEY_DUPLEX, 0.8, word_col, 2, cv2.LINE_AA)
 
     # Spellcheck suggestions
     if state["suggested_word"] and state["suggested_word"] != state["word_buffer"]:
         cv2.putText(frame, f"[Suggest: {state['suggested_word']}]", (350, h - 85),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, (34, 214, 122), 1, cv2.LINE_AA)
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, C_GREEN, 1, cv2.LINE_AA)
     elif state["suggestions"]:
         sugg_str = ", ".join(state["suggestions"][:2])
         cv2.putText(frame, f"[Did you mean: {sugg_str}]", (350, h - 85),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 180, 50), 1, cv2.LINE_AA)
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, C_ORANGE, 1, cv2.LINE_AA)
 
     # Full Sentence Display Tape
     sentence_txt = state["sentence"] if state["sentence"] else "(Empty sentence)"
-    sent_col = (255, 255, 255) if state["sentence"] else (100, 100, 120)
+    sent_col = C_TEXT if state["sentence"] else C_MUTED
     cv2.putText(frame, "SENTENCE:", (25, h - 40),
-                cv2.FONT_HERSHEY_SIMPLEX, 0.45, (160, 132, 255), 1, cv2.LINE_AA)
+                cv2.FONT_HERSHEY_SIMPLEX, 0.45, C_PURPLE, 1, cv2.LINE_AA)
     cv2.putText(frame, sentence_txt, (120, h - 36),
                 cv2.FONT_HERSHEY_DUPLEX, 0.85, sent_col, 2, cv2.LINE_AA)
 

@@ -129,6 +129,12 @@ def extract_features_from_image(img_bgr: np.ndarray):
 
     pts_scaled = pts_centered / scale
 
+    # KNOWN BUG (deferred): this rotates by +angle, which DOUBLES the palm angle
+    # instead of cancelling it (20 deg hand rotation -> 40 deg residual, 90 -> inverted),
+    # so these features are not rotation-invariant. Fix is one sign:
+    #     rot = np.array([[cos_a, -sin_a], [sin_a, cos_a]])
+    # Do NOT apply it alone -- every shipped .pkl/.json was trained on the broken
+    # transform, so ASL and both ISL variants must be retrained together.
     # Step 5: 2D Palm Rotation Alignment
     angle = np.arctan2(pts_scaled[9, 0], -pts_scaled[9, 1])
     cos_a, sin_a = np.cos(angle), np.sin(angle)

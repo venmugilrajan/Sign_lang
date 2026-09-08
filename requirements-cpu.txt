@@ -1,0 +1,18 @@
+torch>=2.0.0,<2.1
+torchvision>=0.15.0,<0.16
+flask>=3.0.0
+flask-cors>=4.0.0
+pillow>=10.0.0
+numpy>=1.24.0
+opencv-python>=4.8.0
+mediapipe>=0.10.0
+# NOTE: the models/*.pkl landmark classifiers were trained on scikit-learn 1.6.1.
+# Loading them on a newer release emits InconsistentVersionWarning; this is cosmetic --
+# predict_proba was verified to match a manual numpy forward pass exactly (diff 0.0).
+# Do NOT pin ==1.6.1: it has no cp314 wheel and will not install on Python 3.14.
+# The warning clears only when the .pkl files are regenerated on the installed version.
+scikit-learn>=1.6.1
+pyspellchecker>=0.8.0
+matplotlib>=3.7.0
+seaborn>=0.12.0
+pyttsx3>=2.90
