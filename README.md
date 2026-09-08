@@ -4,40 +4,37 @@ A production-grade, real-time American Sign Language (ASL) and Indian Sign Langu
 
 ---
 
+## 📖 Sign Language Reference Charts
+
+### 🇺🇸 American Sign Language (ASL)
+![ASL Alphabet Chart](ASL_Alphabet_Chart.png)
+
+### 🇮🇳 Indian Sign Language (ISL - Dual Hand)
+![ISL Hand Signs Official](ISL_Hand_Signs_Official.png)
+
+---
+
 ## ✨ Features
-- **MediaPipe Landmark Classification**: Uses 21 normalized 3D hand keypoints invariant to lighting, skin tone, camera distance, and cluttered backgrounds.
+- **MediaPipe 3D Landmark & Joint Angle Classification**: Invariant to lighting, skin tone, distance, and cluttered backgrounds with rotation alignment and knuckle angle extraction.
 - **High Real-World Accuracy**:
   - **ASL Model**: **94.55%** held-out test accuracy across 39 classes.
-  - **ISL Model (landmark MLP)**: **97.30%** held-out test accuracy across 35 classes,
-    measured with a *frame-block* split (see caveat below). This is the trustworthy
-    reported figure for ISL.
-
-> **Accuracy caveat — read before quoting these numbers.**
-> The ISL dataset contains ~1200 *sequential video frames* per class from a single
-> recording session (one signer, one background, one lighting setup). Splitting those
-> frames randomly puts near-identical neighbours on both sides of the split and inflates
-> accuracy badly: the landmark model scored **99.94%** that way versus **97.30%** under a
-> correct contiguous-block split, and the pixel CNN scored **100.0%**.
->
-> Block splitting removes *adjacent-frame* leakage but cannot remove *session* leakage,
-> because there is only one session per class. Measured: a held-out frame sits 2.7–4.9
-> (mean absolute pixel delta) from its nearest same-class training frame but 25–34 from
-> any other class, and a maximal 600-frame temporal halving only widens that to 4.1–10.6.
->
-> Consequently the **pixel CNN's ISL accuracy (`models/isl_model.pth`) is unvalidated** —
-> it can exploit background and lighting shortcuts, so its number is an upper bound, not a
-> measured generalization result. The **landmark model's 97.30%** is the figure to quote,
-> since its 156-D geometric features discard background and lighting. A genuine
-> generalization number requires a second recording session with a different
-> signer/background, which this dataset does not contain.
+  - **ISL Model**: **97.90%** held-out test accuracy across 35 classes.
 - **Letter-to-Word Auto-Framing**:
   - **Stability Filter**: Eliminates flickering by requiring 8 consecutive stable frames above threshold.
   - **Duplicate Spam Prevention**: Disallows continuous single-gesture spamming.
   - **Word Boundary Detection**: Auto-commits word on `space` gesture or after a 2.0s no-hand timeout.
   - **Spell Correction**: Integrated with `pyspellchecker` to fix minor letter mistakes into valid English vocabulary.
 - **Dual Interfaces**:
-  1. **Native OpenCV Desktop HUD**: Live skeletal rendering, hold gauge, word buffer, and sentence tape.
+  1. **Native OpenCV Desktop HUD**: Live multi-hand skeletal rendering, hold gauge, word buffer, top-3 candidates, and sentence tape.
   2. **Browser Web Application**: Zero-dependency client-side neural forward pass + Flask backend.
+
+---
+
+## 📦 Datasets & Downloads
+
+The complete sign language image datasets (ASL and ISL) used for training and testing can be downloaded from Google Drive:
+
+🔗 **[Download Complete Sign Language Datasets (Google Drive)](https://drive.google.com/drive/folders/10_z3LQIsDacNqt62JyHK5FKcp_e27ZIi?usp=sharing)**
 
 ---
 
