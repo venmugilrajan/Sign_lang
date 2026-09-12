@@ -55,7 +55,7 @@ python run_native.py
 - `b` : Backspace / Delete last letter
 - `s` : Space / Commit current word
 - `c` : Clear all
-- `q` / `ESC` : Quit
+- `q` / `ESC` : Quit 
 
 ---
 
