@@ -6,10 +6,11 @@
  */
 
 // ── Config ──────────────────────────────────────────────────────────────────
-let   STREAK_NEEDED  = 5;     // frames of same letter to capture (settings sheet)
-const COOLDOWN_MS    = 1000;  // ms after capture before detecting again
-const SPACE_FRAMES   = 15;    // no-hand frames before auto word push
-let   MIN_CONFIDENCE = 0.65;  // minimum classifier confidence (settings sheet)
+let   STREAK_NEEDED   = 6;     // frames of same letter to capture (settings sheet)
+const COOLDOWN_MS     = 900;   // ms after capture before detecting again
+let   SPACE_FRAMES    = 60;    // no-hand frames before auto word push (~2.0s at 30fps)
+let   MIN_CONFIDENCE  = 0.70;  // minimum classifier confidence (settings sheet)
+const MIN_HAND_SPAN   = 35;    // minimum pixel distance between wrist and middle MCP to reject ghost hands
 
 // ── MediaPipe Hand Connections ───────────────────────────────────────────────
 const CONNECTIONS = [
@@ -51,6 +52,15 @@ let sentenceWords = [];
 let streakLetter  = null;
 let streakCount   = 0;
 let noHandCount   = 0;
+
+// State tracking to prevent runaway letter repeat without releasing hand
+let lastCapturedLetter = '';
+let releasedSinceLastCapture = true;
+let releaseFrames = 0;
+const RELEASE_FRAMES_NEEDED = 3;
+
+// State tracking to prevent runaway word repeat without clear user intent
+let lastCommittedWord = '';
 
 // Trained Neural Network model weights loaded from JSON
 let aslWeights     = null;
@@ -133,14 +143,22 @@ async function pushWord() {
       // Backend not present or offline, keep raw word
     }
 
-    sentenceWords.push(w);
-    renderSentence();
-    showToast(`✓ "${w}"`);
+    // Gating: Don't repeat the exact same word back-to-back if triggered by background jitter
+    const isDuplicateAutoPush = (sentenceWords.length > 0 && sentenceWords[sentenceWords.length - 1] === w && lastCommittedWord === w);
+    if (!isDuplicateAutoPush) {
+      sentenceWords.push(w);
+      lastCommittedWord = w;
+      renderSentence();
+      showToast(`✓ "${w}"`);
+    }
   }
   currentWord = '';
   renderWord();
   resetStreak();
   noHandCount = 0;
+  lastCapturedLetter = '';
+  releasedSinceLastCapture = true;
+  releaseFrames = 0;
 }
 
 // ── Letter capture ────────────────────────────────────────────────────────────
@@ -152,12 +170,18 @@ function captureLetter(letter) {
     currentWord = currentWord.slice(0, -1);
     renderWord();
     resetStreak();
+    lastCapturedLetter = '';
+    releasedSinceLastCapture = true;
     return;
   }
   if (l === 'nothing') return;
 
   currentWord += letter.toUpperCase();
   renderWord();
+
+  lastCapturedLetter = letter.toUpperCase();
+  releasedSinceLastCapture = false;
+  releaseFrames = 0;
 
   detectedLetter.classList.remove('flash');
   void detectedLetter.offsetWidth;
@@ -202,12 +226,20 @@ function calculateAngle3D(a, b, c) {
  * including its rotation convention. Do not "fix" the rotation here alone --
  * the shipped weights were trained with it (see notes).
  */
-function normalizeLandmarks(lm, w, h) {
+function normalizeLandmarks(lm, w, h, handedness = "Right", applyHandednessMirror = false) {
   w = w || video.videoWidth  || 640;
   h = h || video.videoHeight || 480;
 
   // Aspect-ratio corrected pixel space: (x*w, y*h, z*w)
   const pts = lm.map(p => [p.x * w, p.y * h, p.z * w]);
+
+  // Mirror Left hand to match Right hand dataset distribution (ASL single hand)
+  if (applyHandednessMirror && handedness === "Left") {
+    const wristX = pts[0][0];
+    pts.forEach(p => {
+      p[0] = wristX - (p[0] - wristX);
+    });
+  }
 
   // Centre on the wrist
   const wrist = pts[0];
@@ -296,13 +328,22 @@ async function loadLandmarkModel() {
  * run_native.extract_landmarks(). If these two ever disagree, every
  * two-handed sign silently decodes to the wrong letter.
  */
-function buildFeatureVector(multiHandLandmarks, isDualMode, w, h) {
+function buildFeatureVector(multiHandLandmarks, isDualMode, multiHandedness, w, h) {
   if (!isDualMode) {
-    return normalizeLandmarks(multiHandLandmarks[0], w, h);
+    const handedness = (multiHandedness && multiHandedness[0] && multiHandedness[0].label)
+      ? multiHandedness[0].label
+      : "Right";
+    // In ASL single hand mode, mirror Left hands to match Right hand dataset
+    return normalizeLandmarks(multiHandLandmarks[0], w, h, handedness, true);
   }
 
   const hands = multiHandLandmarks
-    .map(lm => ({ x: lm[0].x, feat: normalizeLandmarks(lm, w, h) }))
+    .map((lm, idx) => {
+      const handedness = (multiHandedness && multiHandedness[idx] && multiHandedness[idx].label)
+        ? multiHandedness[idx].label
+        : "Right";
+      return { x: lm[0].x, feat: normalizeLandmarks(lm, w, h, handedness, false) };
+    })
     .sort((a, b) => a.x - b.x);
 
   const slot1 = hands[0].feat;
@@ -310,17 +351,37 @@ function buildFeatureVector(multiHandLandmarks, isDualMode, w, h) {
   return slot1.concat(slot2);
 }
 
-function classify(multiHandLandmarks) {
+// Helper to check if hand landmarks represent a valid, non-ghost hand
+function isValidHand(lm) {
+  if (!lm || lm.length < 21) return false;
+  const w = displayCanvas.width  || 640;
+  const h = displayCanvas.height || 480;
+
+  // Wrist (0) to Middle MCP (9) distance in pixels
+  const dx = (lm[9].x - lm[0].x) * w;
+  const dy = (lm[9].y - lm[0].y) * h;
+  const span = Math.sqrt(dx * dx + dy * dy);
+
+  // Reject tiny noise clusters / background artifacts
+  if (span < MIN_HAND_SPAN) return false;
+
+  // Check landmark coordinates are reasonably within frame [-0.2, 1.2]
+  for (let i = 0; i < lm.length; i++) {
+    if (isNaN(lm[i].x) || isNaN(lm[i].y)) return false;
+    if (lm[i].x < -0.2 || lm[i].x > 1.2 || lm[i].y < -0.2 || lm[i].y > 1.2) return false;
+  }
+  return true;
+}
+
+function classify(multiHandLandmarks, multiHandedness) {
   if (!currentWeights || !multiHandLandmarks || multiHandLandmarks.length === 0) {
     return { letter: 'nothing', confidence: 0.0 };
   }
 
   // 1. Prepare feature vector (78 single-hand, or 156 dual-hand)
   const isDualMode = currentWeights.w0.length === 156;
-  const x = buildFeatureVector(multiHandLandmarks, isDualMode);
+  const x = buildFeatureVector(multiHandLandmarks, isDualMode, multiHandedness);
 
-  // matMul walks input.length, so a short vector would silently use only the
-  // first N rows of w0 and return a confident wrong answer. Fail loudly instead.
   if (x.length !== currentWeights.w0.length) {
     console.error(`Feature/weight mismatch: built ${x.length}-D, model expects ${currentWeights.w0.length}-D`);
     return { letter: 'nothing', confidence: 0.0 };
@@ -345,14 +406,24 @@ function classify(multiHandLandmarks) {
   // Softmax to get probabilities
   const probs = softmax(h);
 
-  // Find max confidence index
+  // Find top 2 probabilities to check margin
   let maxIdx = 0;
   let maxProb = 0;
+  let secondProb = 0;
   for (let i = 0; i < probs.length; i++) {
     if (probs[i] > maxProb) {
+      secondProb = maxProb;
       maxProb = probs[i];
       maxIdx = i;
+    } else if (probs[i] > secondProb) {
+      secondProb = probs[i];
     }
+  }
+
+  // Require clear margin (at least 0.08 difference between 1st and 2nd choice)
+  // to avoid jitter between ambiguous classes
+  if ((maxProb - secondProb) < 0.08 && maxProb < 0.85) {
+    return { letter: 'nothing', confidence: maxProb };
   }
 
   return {
@@ -375,8 +446,24 @@ function processResult(letter, confidence) {
 
   const effective = (confidence >= MIN_CONFIDENCE && letter !== 'nothing') ? letter : null;
 
+  // Track release for repeating the same letter
+  if (!effective || effective !== lastCapturedLetter) {
+    releaseFrames++;
+    if (releaseFrames >= RELEASE_FRAMES_NEEDED) {
+      releasedSinceLastCapture = true;
+    }
+  } else {
+    releaseFrames = 0;
+  }
+
   if (paused || inCooldown || !effective) {
     if (!effective) resetStreak();
+    return;
+  }
+
+  // Prevent spamming the exact same letter repeatedly without releasing hand
+  if (effective.toUpperCase() === lastCapturedLetter && !releasedSinceLastCapture) {
+    resetStreak();
     return;
   }
 
@@ -407,16 +494,16 @@ function onResults(results) {
   dctx.clearRect(0, 0, displayCanvas.width, displayCanvas.height);
   dctx.drawImage(results.image, 0, 0, displayCanvas.width, displayCanvas.height);
 
-  if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
+  // Filter for genuine hands with valid size and geometry
+  const validHands = (results.multiHandLandmarks || []).filter(isValidHand);
+
+  if (validHands.length > 0) {
     noHandOverlay.classList.remove('visible');
     handBadge.className   = 'hand-badge live';
-    handBadge.textContent = 'HAND DETECTED';
+    handBadge.textContent = validHands.length > 1 ? '2 HANDS DETECTED' : 'HAND DETECTED';
+    validHands.forEach(drawSkeleton);
 
-    const hands = results.multiHandLandmarks;
-    handBadge.textContent = hands.length > 1 ? '2 HANDS DETECTED' : 'HAND DETECTED';
-    hands.forEach(drawSkeleton);
-
-    const res = classify(hands);
+    const res = classify(validHands, results.multiHandedness);
     processResult(res.letter, res.confidence);
 
   } else {
@@ -426,6 +513,12 @@ function onResults(results) {
     detectedLetter.textContent = '';
     detectedConf.textContent   = 'Waiting…';
     resetStreak();
+
+    // Hand was dropped/removed -> immediately grant release permission for next letter
+    releaseFrames++;
+    if (releaseFrames >= RELEASE_FRAMES_NEEDED) {
+      releasedSinceLastCapture = true;
+    }
 
     if (currentWord) {
       noHandCount++;
@@ -523,8 +616,8 @@ async function initMediaPipe() {
   hands.setOptions({
     maxNumHands: 2,
     modelComplexity: 1,
-    minDetectionConfidence: 0.6,
-    minTrackingConfidence: 0.6,
+    minDetectionConfidence: 0.70,
+    minTrackingConfidence: 0.70,
   });
 
   hands.onResults(onResults);
@@ -628,15 +721,21 @@ function setupControls() {
 
   // Settings sheet. Both thresholds are read live by processResult(),
   // so no restart is needed after a change.
-  const setConf   = document.getElementById('set-confidence');
-  const outConf   = document.getElementById('out-confidence');
-  const setStreak = document.getElementById('set-streak');
-  const outStreak = document.getElementById('out-streak');
+  const setConf        = document.getElementById('set-confidence');
+  const outConf        = document.getElementById('out-confidence');
+  const setStreak      = document.getElementById('set-streak');
+  const outStreak      = document.getElementById('out-streak');
+  const setTimeoutInput = document.getElementById('set-timeout');
+  const outTimeout     = document.getElementById('out-timeout');
 
   setConf.value   = Math.round(MIN_CONFIDENCE * 100);
   outConf.value   = `${setConf.value}%`;
   setStreak.value = STREAK_NEEDED;
   outStreak.value = STREAK_NEEDED;
+  if (setTimeoutInput && outTimeout) {
+    setTimeoutInput.value = (SPACE_FRAMES / 30).toFixed(1);
+    outTimeout.value      = `${setTimeoutInput.value}s`;
+  }
 
   setConf.addEventListener('input', () => {
     MIN_CONFIDENCE = Number(setConf.value) / 100;
@@ -648,6 +747,14 @@ function setupControls() {
     outStreak.value = STREAK_NEEDED;
     resetStreak();                 // rescale the dial against the new target
   });
+
+  if (setTimeoutInput && outTimeout) {
+    setTimeoutInput.addEventListener('input', () => {
+      const sec = Number(setTimeoutInput.value);
+      SPACE_FRAMES = Math.round(sec * 30);
+      outTimeout.value = `${sec.toFixed(1)}s`;
+    });
+  }
 
   // Keyboard shortcuts
   document.addEventListener('keydown', (e) => {

@@ -138,8 +138,8 @@
   <div class="field">
     <label for="set-confidence">Minimum confidence</label>
     <div class="field-row">
-      <input type="range" id="set-confidence" min="30" max="95" step="5" value="65" />
-      <output class="field-value" id="out-confidence">65%</output>
+      <input type="range" id="set-confidence" min="40" max="95" step="5" value="70" />
+      <output class="field-value" id="out-confidence">70%</output>
     </div>
     <p class="field-help">Predictions below this are ignored. Raise it if letters are captured too eagerly.</p>
   </div>
@@ -147,10 +147,19 @@
   <div class="field">
     <label for="set-streak">Frames to confirm</label>
     <div class="field-row">
-      <input type="range" id="set-streak" min="2" max="12" step="1" value="5" />
-      <output class="field-value" id="out-streak">5</output>
+      <input type="range" id="set-streak" min="3" max="15" step="1" value="6" />
+      <output class="field-value" id="out-streak">6</output>
     </div>
     <p class="field-help">How long the same sign must hold before the letter is captured.</p>
+  </div>
+
+  <div class="field">
+    <label for="set-timeout">Auto-push word delay</label>
+    <div class="field-row">
+      <input type="range" id="set-timeout" min="1.0" max="4.0" step="0.5" value="2.0" />
+      <output class="field-value" id="out-timeout">2.0s</output>
+    </div>
+    <p class="field-help">How long you must lower your hand before the word commits to sentence.</p>
   </div>
 </div>
 

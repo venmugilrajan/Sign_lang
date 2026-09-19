@@ -226,7 +226,16 @@ kbd, .word-chip, .cam-error-code {
   .viewport, .panel, .sheet { corner-shape: squircle; }
 }
 
-#webcam-video { display: none; }
+#webcam-video {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+  z-index: -1;
+}
 
 #display-canvas {
   display: block;
