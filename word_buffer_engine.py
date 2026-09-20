@@ -215,6 +215,8 @@ class WordBufferStateMachine:
         self.candidate_count = 0
 
         self.last_top3 = []   # diagnostic: top-3 candidates of the most recent frame
+        self._cached_word = None
+        self._cached_status_result = ("", False, [])
 
     @property
     def current_word(self) -> str:
@@ -309,9 +311,11 @@ class WordBufferStateMachine:
         self.released_since_last_confirm = True
         self.candidate_letter = ""
         self.candidate_count = 0
+        self._cached_word = None
 
     def backspace(self):
         """Deletes last letter from buffer or pops last word from sentence."""
+        self._cached_word = None
         if self.word_letters:
             popped = self.word_letters.pop()
             if self.letter_confidences:
@@ -330,11 +334,15 @@ class WordBufferStateMachine:
         self.released_since_last_confirm = True
         self.candidate_letter = ""
         self.candidate_count = 0
+        self._cached_word = None
         print("[WORD BUFFER] Cleared all buffers and sentence.")
 
     def _get_status(self, captured_letter=None) -> dict:
         curr = self.current_word
-        suggested, is_corr, sugg_list = self.corrector.correct(curr, self.letter_confidences) if curr else ("", False, [])
+        if curr != self._cached_word:
+            self._cached_word = curr
+            self._cached_status_result = self.corrector.correct(curr, self.letter_confidences) if curr else ("", False, [])
+        suggested, is_corr, sugg_list = self._cached_status_result
         return {
             "captured_letter": captured_letter,
             "word_buffer": curr,
