@@ -6,10 +6,10 @@
  */
 
 // ── Config ──────────────────────────────────────────────────────────────────
-let   STREAK_NEEDED   = 6;     // frames of same letter to capture (settings sheet)
-const COOLDOWN_MS     = 900;   // ms after capture before detecting again
+let   STREAK_NEEDED   = 5;     // frames of same letter to capture (settings sheet, matches native)
+const COOLDOWN_MS     = 350;   // ms after capture before detecting again (fluid sign transitions)
 let   SPACE_FRAMES    = 60;    // no-hand frames before auto word push (~2.0s at 30fps)
-let   MIN_CONFIDENCE  = 0.70;  // minimum classifier confidence (settings sheet)
+let   MIN_CONFIDENCE  = 0.50;  // minimum classifier confidence (settings sheet, matches native 0.40-0.50)
 const MIN_HAND_SPAN   = 35;    // minimum pixel distance between wrist and middle MCP to reject ghost hands
 
 // ── MediaPipe Hand Connections ───────────────────────────────────────────────
@@ -41,13 +41,14 @@ const EDGE_COLORS = [
 ];
 
 // ── State ────────────────────────────────────────────────────────────────────
-let currentMode   = 'asl';
-let paused        = false;
-let inCooldown    = false;
-let cameraActive  = false;
+let currentMode       = 'asl';
+let paused            = false;
+let inCooldown        = false;
+let cameraActive      = false;
 
-let currentWord   = '';
-let sentenceWords = [];
+let currentWord       = '';
+let letterConfidences = [];
+let sentenceWords     = [];
 
 let streakLetter  = null;
 let streakCount   = 0;
@@ -138,7 +139,7 @@ async function pushWord() {
       const res = await fetch('/spellcheck', {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({ word: w })
+        body: JSON.stringify({ word: w, confidences: letterConfidences })
       });
       if (res.ok) {
         const data = await res.json();
@@ -160,6 +161,7 @@ async function pushWord() {
     }
   }
   currentWord = '';
+  letterConfidences = [];
   renderWord();
   resetStreak();
   noHandCount = 0;
@@ -169,12 +171,13 @@ async function pushWord() {
 }
 
 // ── Letter capture ────────────────────────────────────────────────────────────
-function captureLetter(letter) {
+function captureLetter(letter, confidence = 0.85) {
   if (inCooldown) return;
   const l = letter.toLowerCase();
   if (l === 'space' || l === '_') { pushWord(); return; }
   if (l === 'del' || l === 'delete') {
     currentWord = currentWord.slice(0, -1);
+    letterConfidences.pop();
     renderWord();
     resetStreak();
     lastCapturedLetter = '';
@@ -184,6 +187,7 @@ function captureLetter(letter) {
   if (l === 'nothing') return;
 
   currentWord += letter.toUpperCase();
+  letterConfidences.push(confidence);
   renderWord();
 
   lastCapturedLetter = letter.toUpperCase();
@@ -543,7 +547,7 @@ function processResult(letter, confidence) {
   streakLabel.textContent = `${Math.min(streakCount, STREAK_NEEDED)} / ${STREAK_NEEDED}`;
 
   if (streakCount >= STREAK_NEEDED) {
-    captureLetter(streakLetter);
+    captureLetter(streakLetter, confidence);
   }
 }
 
@@ -773,6 +777,7 @@ async function initMediaPipe() {
 function setupControls() {
   document.getElementById('btn-backspace').addEventListener('click', () => {
     currentWord = currentWord.slice(0, -1);
+    letterConfidences.pop();
     renderWord();
     resetStreak();
   });
@@ -783,6 +788,7 @@ function setupControls() {
 
   document.getElementById('btn-clear-word').addEventListener('click', () => {
     currentWord = '';
+    letterConfidences = [];
     renderWord();
     resetStreak();
   });
@@ -790,6 +796,7 @@ function setupControls() {
   document.getElementById('btn-clear-sentence').addEventListener('click', () => {
     sentenceWords = [];
     currentWord = '';
+    letterConfidences = [];
     renderWord();
     renderSentence();
     resetStreak();
@@ -911,6 +918,7 @@ function setupControls() {
       pushWord();
     } else if (e.key === 'Backspace') {
       currentWord = currentWord.slice(0, -1);
+      letterConfidences.pop();
       renderWord();
     } else if (e.key === '1') {
       btnAsl.click();

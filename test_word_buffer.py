@@ -83,6 +83,8 @@ def run_tests():
         ("PLEAS", [0.9, 0.9, 0.9, 0.9, 0.9], "PLEASE", "Truncated input corrected to PLEASE"),
         ("THSNK", [0.9, 0.9, 0.45, 0.9, 0.9], "THANKS", "Low-confidence letter 'S' fixed to 'A' (THANKS)"),
         ("SRRY", [0.9, 0.9, 0.9, 0.9], "SORRY", "Missing letter fixed to custom word SORRY"),
+        ("BABY", [0.95, 0.95, 0.95, 0.95], "BABY", "Valid English word BABY preserved as BABY (not corrupted to BAD)"),
+        ("BABBY", [0.9, 0.9, 0.9, 0.9, 0.9], "BABY", "Typo BABBY corrected to BABY"),
         ("XYZQW", [0.9, 0.9, 0.9, 0.9, 0.9], "XYZQW", "Unmatched junk preserved without wrong forced correction"),
     ]
 

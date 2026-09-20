@@ -23,13 +23,16 @@ SHORT_VALID_WORDS = {
     "BOY", "DID", "ITS", "LET", "PUT", "SAY", "SHE", "TOO", "USE"
 }
 
-# Default Custom Sign Vocabulary
+# Default Custom Sign Vocabulary - expanded with high-frequency sign language communication words
 DEFAULT_SIGN_VOCABULARY = [
-    "HI", "HELLO", "THANKYOU", "THANKS", "PLEASE", "YES", "NO", "SORRY", "WELCOME",
-    "GOOD", "BAD", "NAME", "HELP", "HOW", "WHAT", "WHERE", "WHEN", "WHY",
-    "WHO", "FINE", "NICE", "MEET", "YOU", "MY", "ME", "SIGN", "LANGUAGE",
-    "LEARN", "DEAF", "FRIEND", "LOVE", "HAPPY", "SAD", "WATER", "FOOD",
-    "EAT", "DRINK", "STOP", "GO", "TIME", "TODAY", "TOMORROW", "YESTERDAY"
+    "HI", "HELLO", "GOODBYE", "BYE", "THANKYOU", "THANKS", "PLEASE", "YES", "NO", "SORRY", "WELCOME",
+    "GOOD", "BAD", "GREAT", "FINE", "NICE", "COOL", "NAME", "HELP", "HOW", "WHAT", "WHERE", "WHEN", "WHY",
+    "WHO", "WHICH", "MEET", "YOU", "MY", "ME", "WE", "US", "THEY", "SIGN", "LANGUAGE",
+    "LEARN", "DEAF", "FRIEND", "LOVE", "LIKE", "HAPPY", "SAD", "WATER", "FOOD",
+    "EAT", "DRINK", "SLEEP", "STOP", "GO", "COME", "WAIT", "WANT", "NEED",
+    "TIME", "TODAY", "TOMORROW", "YESTERDAY", "NOW", "SOON", "LATER", "DAY", "NIGHT", "MORNING",
+    "BABY", "MOTHER", "FATHER", "BROTHER", "SISTER", "FAMILY", "BOY", "GIRL", "CHILD", "SON", "DAUGHTER",
+    "HOME", "HOUSE", "SCHOOL", "WORK", "CAR", "BOOK", "PHONE"
 ]
 
 
@@ -91,10 +94,11 @@ def weighted_edit_distance(raw_word: str, target_word: str, letter_confidences: 
 class TwoTierSpellCorrector:
     """
     Two-tier word corrector for sign language letter buffers:
-    Tier 0: Short word protection (words <= 3 chars that are valid words stay as-is).
+    Tier 0: Exact valid word protection (valid English or custom sign words stay as-is).
     Tier 1: Custom Sign Vocabulary matching via weighted Levenshtein distance.
-            - length <= 3: max edit distance allowed is 1
-            - length > 3: max edit distance allowed is 2
+            - length <= 2: max edit distance 0 (exact match)
+            - length 3-4:  max edit distance 1 (preserves short words from drastic 50% changes)
+            - length >= 5: max edit distance 2 (strictly prioritizing distance 1)
     Tier 2: General English dictionary (pyspellchecker) fallback.
     Tier 3: Raw preservation with 'did you mean' suggestions if no direct match exists.
     """
@@ -120,18 +124,24 @@ class TwoTierSpellCorrector:
             self.last_tier = "empty"
             return "", False, []
 
-        # 0. Short valid words check (e.g. 'HI', 'NO', 'OK', 'YES', 'ME', 'MY', 'GO')
-        if raw in SHORT_VALID_WORDS or raw in self.custom_vocab:
-            self.last_tier = "T0 short-word/vocab-exact (protected)"
+        # Tier 0: Exact valid word protection
+        # Protected if:
+        # 1. Directly in custom sign vocabulary (e.g. 'HELLO', 'PLEASE', 'BABY')
+        # 2. In common short valid words list (e.g. 'HI', 'NO', 'OK')
+        # 3. A genuine, established English word (word frequency >= 2500 in English corpus,
+        #    protecting words like 'BABY', 'GAME', 'DOG' while allowing typos like 'PLEAS' or 'HELO' to be corrected)
+        is_known_common_word = (self.general_spell.word_frequency[raw.lower()] >= 2500)
+        if raw in self.custom_vocab or raw in SHORT_VALID_WORDS or is_known_common_word:
+            self.last_tier = "T0 valid-word (protected)"
             return raw, False, []
 
         # Strict edit distance threshold based on word length:
         # 1-2 letter words: max dist 0 (must be exact)
-        # 3 letter words: max dist 1
-        # 4+ letter words: max dist 2
+        # 3-4 letter words: max dist 1 (prevents changing half of a short word like BABY -> BAD)
+        # 5+ letter words: max dist 2
         if len(raw) <= 2:
             max_allowed_dist = 0
-        elif len(raw) == 3:
+        elif len(raw) <= 4:
             max_allowed_dist = 1
         else:
             max_allowed_dist = 2
