@@ -36,7 +36,7 @@ ASL_MODEL_PATH = os.path.join(BASE_DIR, "models", "asl_landmark_model.pkl")
 ISL_MODEL_PATH = os.path.join(BASE_DIR, "models", "isl_landmark_model.pkl")
 
 # Live Thresholds
-MIN_DETECTION_CONF = 0.60   # Robust confidence threshold (prevents false hand detection on face/forehead/eyebrow)
+MIN_DETECTION_CONF = 0.40   # Robust confidence threshold (detects curled 'O', 'C', 'E', 'S' while rejecting noise)
 CONF_THRESHOLD = 0.55       # Letter acceptance threshold (filters low-confidence prediction noise)
 STABLE_FRAMES_NEEDED = 5    # Consecutive frames required to confirm letter
 RELEASE_FRAMES_NEEDED = 2   # Frames to confirm hand release for double letters
@@ -299,27 +299,16 @@ class LandmarkSignTranslator:
         hands_data = []
 
         for idx, landmarks in enumerate(results.hand_landmarks):
-            # Strict Anatomical Validation:
+            # Anatomical Validation:
             # Rejects facial false positives (forehead, eyebrows, spectacles, nose)
-            # 1. Palm length: distance between wrist (0) and middle finger MCP base (9)
+            # while fully supporting profile/curled hand signs like 'O', 'C', 'E', 'S'
             palm_len = math.hypot(landmarks[9].x - landmarks[0].x, landmarks[9].y - landmarks[0].y)
-
-            # 2. Palm breadth: distance between Index MCP (5) and Pinky MCP (17)
-            palm_width = math.hypot(landmarks[17].x - landmarks[5].x, landmarks[17].y - landmarks[5].y)
-
-            # 3. Bounding box & aspect ratio
-            xs = [lm.x for lm in landmarks]
-            ys = [lm.y for lm in landmarks]
-            bw = max(xs) - min(xs)
-            bh = max(ys) - min(ys)
-            aspect_ratio = max(bw, bh) / max(min(bw, bh), 1e-4)
+            total_span = max(math.hypot(lm.x - landmarks[0].x, lm.y - landmarks[0].y) for lm in landmarks)
 
             # Rejection criteria:
-            # - Real human hand palm length is at least 0.05 of the frame
-            # - Real human palm breadth is proportional: palm_width / palm_len >= 0.30
-            #   (On forehead/eyebrow hallucinations, knuckles are clumped in a single stripe: ratio < 0.20)
-            # - Real human hand aspect ratio <= 2.6 (eyebrow hallucination is > 3.2 horizontal stripe)
-            if palm_len < 0.05 or (palm_width / max(palm_len, 1e-4)) < 0.30 or aspect_ratio > 2.6:
+            # - Real human hand has valid palm length and overall physical span across frame
+            # - Facial/eyebrow/nose hallucinations have near-zero span (< 0.05)
+            if palm_len < 0.04 or total_span < 0.08:
                 continue
 
             h_name = "Right"

@@ -133,7 +133,10 @@ kbd, .word-chip, .cam-error-code {
 }
 .mode-btn {
   position: relative; z-index: 2;
-  padding: 6px 20px;
+  flex: 1 1 0;
+  min-width: 72px;
+  padding: 6px 14px;
+  text-align: center;
   border: none; background: none;
   border-radius: var(--r-pill);
   font-family: var(--font);
@@ -148,12 +151,15 @@ kbd, .word-chip, .cam-error-code {
 .mode-slider {
   position: absolute; z-index: 1;
   top: 3px; left: 3px;
-  width: calc(50% - 3px); height: calc(100% - 6px);
+  width: calc((100% - 10px) / 3); height: calc(100% - 6px);
   background: var(--accent);
   border-radius: var(--r-pill);
   transition: transform var(--dur-slow) var(--ease);
 }
 .mode-toggle.isl-mode .mode-slider { transform: translateX(calc(100% + 2px)); }
+.mode-toggle.visually-mode .mode-slider { transform: translateX(calc(200% + 4px)); }
+
+.hidden { display: none !important; }
 
 /* ── Status pill ───────────────────────────────────────────────────── */
 .status-pill {
@@ -698,3 +704,494 @@ kbd {
 
 ::-webkit-scrollbar { width: 6px; height: 6px; }
 ::-webkit-scrollbar-thumb { background: var(--line-bright); border-radius: var(--r-pill); }
+
+/* ══════════════════════════════════════════════════════════════════════
+   VISUALLY — Practice Studio
+   Interactive 3D avatar & gesture synthesizer matching RyloTranslate.
+   ══════════════════════════════════════════════════════════════════════ */
+
+.visually-workspace {
+  grid-template-columns: minmax(380px, 0.95fr) minmax(0, 1.45fr);
+}
+
+.practice-input-rail {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.practice-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  overflow: hidden;
+}
+
+.practice-head-title {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.practice-badge {
+  display: inline-block;
+  align-self: flex-start;
+  padding: 2px 8px;
+  font-family: var(--mono);
+  font-size: 0.68rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  color: var(--accent-text);
+  background: var(--accent-soft);
+  border: 1px solid var(--accent-line);
+  border-radius: var(--r-pill);
+}
+
+.practice-dialect-toggle {
+  display: flex;
+  gap: 4px;
+  background: var(--surface-3);
+  padding: 3px;
+  border-radius: var(--r-pill);
+  border: 1px solid var(--line);
+}
+
+.dialect-pill {
+  padding: 4px 14px;
+  border-radius: var(--r-pill);
+  border: none;
+  background: transparent;
+  font-family: var(--mono);
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--text-dim);
+  cursor: pointer;
+  transition: all var(--dur) var(--ease);
+}
+
+.dialect-pill:hover {
+  color: var(--text);
+}
+
+.dialect-pill.active {
+  background: var(--accent);
+  color: #23180a;
+}
+
+/* Textarea & Tools */
+.practice-textarea-box {
+  display: flex;
+  flex-direction: column;
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: var(--r-ctrl);
+  padding: 12px;
+  gap: 10px;
+  transition: border-color var(--dur) var(--ease);
+}
+
+.practice-textarea-box:focus-within {
+  border-color: var(--accent-line);
+  box-shadow: 0 0 0 1px var(--accent-line);
+}
+
+.practice-textarea-box textarea {
+  width: 100%;
+  background: transparent;
+  border: none;
+  color: var(--text);
+  font-family: var(--font);
+  font-size: 0.95rem;
+  line-height: 1.5;
+  resize: none;
+  outline: none;
+}
+
+.practice-textarea-box textarea::placeholder {
+  color: var(--text-mute);
+}
+
+.practice-input-tools {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--line);
+}
+
+.tool-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px;
+  background: var(--surface-3);
+  border: 1px solid var(--line);
+  border-radius: var(--r-ctrl);
+  font-family: var(--font);
+  font-size: 0.78rem;
+  font-weight: 500;
+  color: var(--text-dim);
+  cursor: pointer;
+  transition: all var(--dur) var(--ease);
+}
+
+.tool-btn:hover {
+  color: var(--text);
+  border-color: var(--line-bright);
+}
+
+.tool-btn .icon {
+  width: 15px;
+  height: 15px;
+  flex: none;
+}
+
+.mic-btn.listening {
+  background: var(--danger-soft);
+  color: var(--danger);
+  border-color: var(--danger-line);
+  animation: pulse-mic 1.2s infinite ease-in-out;
+}
+
+@keyframes pulse-mic {
+  0%, 100% { box-shadow: 0 0 0 0 color-mix(in oklab, var(--danger) 40%, transparent); }
+  50%      { box-shadow: 0 0 0 6px transparent; }
+}
+
+.char-count {
+  margin-left: auto;
+  font-family: var(--mono);
+  font-size: 0.72rem;
+  color: var(--text-mute);
+}
+
+/* Quick Samples */
+.quick-samples {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.quick-label {
+  font-size: 0.75rem;
+  color: var(--text-mute);
+  margin-right: 2px;
+}
+
+.sample-chip {
+  padding: 3px 9px;
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: var(--r-pill);
+  font-family: var(--mono);
+  font-size: 0.72rem;
+  color: var(--text-dim);
+  cursor: pointer;
+  transition: all var(--dur) var(--ease);
+}
+
+.sample-chip:hover {
+  color: var(--accent-text);
+  border-color: var(--accent-line);
+  background: var(--accent-soft);
+}
+
+/* Main Action Row */
+.practice-action-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.btn-demo {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 10px 18px;
+  font-weight: 600;
+}
+
+.icon-play {
+  width: 16px;
+  height: 16px;
+}
+
+.speed-control {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: var(--r-ctrl);
+  padding: 3px;
+}
+
+.speed-label {
+  font-size: 0.72rem;
+  color: var(--text-mute);
+  padding-inline: 6px 2px;
+}
+
+.speed-btn {
+  padding: 3px 8px;
+  background: transparent;
+  border: none;
+  border-radius: 6px;
+  font-family: var(--mono);
+  font-size: 0.72rem;
+  color: var(--text-dim);
+  cursor: pointer;
+  transition: all var(--dur) var(--ease);
+}
+
+.speed-btn:hover {
+  color: var(--text);
+}
+
+.speed-btn.active {
+  background: var(--surface-3);
+  color: var(--accent);
+  font-weight: 600;
+}
+
+/* Sequence Timeline */
+.sequence-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.sequence-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.seq-title {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--text-dim);
+  letter-spacing: 0.02em;
+}
+
+.seq-counter {
+  font-family: var(--mono);
+  font-size: 0.72rem;
+  color: var(--text-mute);
+}
+
+.sequence-chips {
+  display: flex;
+  flex-wrap: wrap;
+  align-content: flex-start;
+  gap: 6px;
+  padding: 10px;
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: var(--r-ctrl);
+  min-height: 100px;
+  max-height: 180px;
+  overflow-y: auto;
+}
+
+.sequence-chips .ph {
+  color: var(--text-mute);
+  font-size: 0.8rem;
+  align-self: center;
+  margin: auto;
+}
+
+.sequence-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 32px;
+  height: 32px;
+  padding: 0 8px;
+  background: var(--surface-3);
+  border: 1px solid var(--line-bright);
+  border-radius: 8px;
+  font-family: var(--mono);
+  font-size: 0.88rem;
+  font-weight: 600;
+  color: var(--text);
+  cursor: pointer;
+  transition: all var(--dur) var(--ease);
+}
+
+.sequence-chip:hover {
+  border-color: var(--accent-line);
+  color: var(--accent-text);
+}
+
+.sequence-chip.is-space {
+  min-width: 22px;
+  background: transparent;
+  border-style: dashed;
+  color: var(--text-mute);
+  font-size: 0.65rem;
+}
+
+.sequence-chip.active {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+  color: var(--accent-text);
+  box-shadow: 0 0 12px color-mix(in oklab, var(--accent) 35%, transparent);
+  transform: scale(1.08);
+}
+
+/* ── Practice Avatar Stage ─────────────────────────────────────────────── */
+.practice-stage {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+}
+
+.avatar-viewport {
+  position: relative;
+  flex: 1;
+  width: 100%;
+  height: 100%;
+  min-height: 480px;
+  background: #161619;
+  border: 1px solid var(--line);
+  border-radius: var(--r-panel);
+  overflow: hidden;
+}
+
+#avatar-canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+/* Avatar HUD Badges */
+.avatar-hud-letter {
+  position: absolute;
+  top: 18px;
+  left: 20px;
+  display: flex;
+  flex-direction: column;
+  pointer-events: none;
+}
+
+.hud-letter-char {
+  font-family: var(--mono);
+  font-size: 3.2rem;
+  font-weight: 700;
+  line-height: 1;
+  color: var(--text);
+  text-shadow: 0 0 20px color-mix(in oklab, var(--accent) 40%, transparent);
+}
+
+.hud-letter-sub {
+  font-size: 0.78rem;
+  color: var(--text-dim);
+  margin-top: 4px;
+}
+
+.avatar-hud-status {
+  position: absolute;
+  top: 18px;
+  right: 20px;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 5px 12px;
+  border-radius: var(--r-pill);
+  background: rgb(18 18 19 / 0.85);
+  backdrop-filter: blur(8px);
+  border: 1px solid var(--line);
+  font-family: var(--mono);
+  font-size: 0.75rem;
+  color: var(--text-dim);
+}
+
+.status-badge-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--text-mute);
+}
+
+.avatar-hud-status.playing .status-badge-dot {
+  background: var(--accent);
+  box-shadow: 0 0 8px var(--accent);
+}
+
+/* Floating Avatar Controls Bar */
+.avatar-controls-bar {
+  position: absolute;
+  bottom: 18px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 16px;
+  background: rgb(18 18 20 / 0.88);
+  backdrop-filter: blur(12px);
+  border: 1px solid var(--line-bright);
+  border-radius: var(--r-pill);
+  box-shadow: 0 8px 32px rgb(0 0 0 / 0.6);
+  z-index: 10;
+  min-width: 380px;
+  max-width: 90%;
+}
+
+.avatar-ctrl-btn {
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  background: var(--surface-3);
+  border: 1px solid var(--line);
+  border-radius: 50%;
+  color: var(--text);
+  font-size: 0.88rem;
+  cursor: pointer;
+  transition: all var(--dur) var(--ease);
+  flex: none;
+}
+
+.avatar-ctrl-btn:hover {
+  background: var(--accent-soft);
+  color: var(--accent-text);
+  border-color: var(--accent-line);
+}
+
+.play-pause-btn {
+  background: var(--accent);
+  color: #23180a;
+  border: none;
+}
+
+.play-pause-btn:hover {
+  background: #ffb854;
+  color: #1a1005;
+}
+
+.avatar-progress-wrap {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  padding-inline: 6px;
+}
+
+.avatar-scrubber {
+  width: 100%;
+  accent-color: var(--accent);
+  cursor: pointer;
+  height: 4px;
+}

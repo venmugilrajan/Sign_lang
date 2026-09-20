@@ -692,21 +692,11 @@ function adaptResults(result) {
     const lms = rawLandmarks[i];
     if (!lms || lms.length < 21) continue;
 
-    // Strict anatomical validation to reject facial false positives (forehead, eyebrows, spectacles, nose)
+    // Anatomical validation:
+    // Rejects facial false positives while fully supporting profile/curled hand signs like 'O', 'C', 'E', 'S'
     const palmLen = Math.hypot(lms[9].x - lms[0].x, lms[9].y - lms[0].y);
-    const palmWidth = Math.hypot(lms[17].x - lms[5].x, lms[17].y - lms[5].y);
-    let minX = 1, maxX = 0, minY = 1, maxY = 0;
-    for (let j = 0; j < lms.length; j++) {
-      const p = lms[j];
-      if (p.x < minX) minX = p.x;
-      if (p.x > maxX) maxX = p.x;
-      if (p.y < minY) minY = p.y;
-      if (p.y > maxY) maxY = p.y;
-    }
-    const bw = maxX - minX;
-    const bh = maxY - minY;
-    const aspect = Math.max(bw, bh) / Math.max(Math.min(bw, bh), 1e-4);
-    if (palmLen < 0.05 || (palmWidth / Math.max(palmLen, 1e-4)) < 0.30 || aspect > 2.6) {
+    const totalSpan = Math.max(...lms.map(p => Math.hypot(p.x - lms[0].x, p.y - lms[0].y)));
+    if (palmLen < 0.04 || totalSpan < 0.08) {
       continue;
     }
 
@@ -753,9 +743,9 @@ async function initMediaPipe() {
     },
     runningMode:   'VIDEO',
     numHands:      2,
-    minHandDetectionConfidence: 0.50,
-    minHandPresenceConfidence:  0.50,
-    minTrackingConfidence:      0.50,
+    minHandDetectionConfidence: 0.40,
+    minHandPresenceConfidence:  0.40,
+    minTrackingConfidence:      0.40,
   });
 
   // Start camera stream
@@ -971,13 +961,19 @@ function setupControls() {
   // Mode buttons
   const btnAsl = document.getElementById('btn-asl');
   const btnIsl = document.getElementById('btn-isl');
+  const btnVisually = document.getElementById('btn-visually');
+  const liveWorkspace = document.getElementById('live-workspace');
+  const visuallyWorkspace = document.getElementById('visually-workspace');
 
   btnAsl.addEventListener('click', () => {
     currentMode = 'asl';
     currentWeights = aslWeights;
     btnAsl.classList.add('active');
     btnIsl.classList.remove('active');
-    modeToggle.classList.remove('isl-mode');   // drives .mode-slider transform
+    if (btnVisually) btnVisually.classList.remove('active');
+    modeToggle.classList.remove('isl-mode', 'visually-mode');
+    if (liveWorkspace) liveWorkspace.classList.remove('hidden');
+    if (visuallyWorkspace) visuallyWorkspace.classList.add('hidden');
     resetStreak();
     showToast('Switched to ASL');
   });
@@ -987,10 +983,28 @@ function setupControls() {
     currentWeights = islWeights;
     btnIsl.classList.add('active');
     btnAsl.classList.remove('active');
-    modeToggle.classList.add('isl-mode');      // drives .mode-slider transform
+    if (btnVisually) btnVisually.classList.remove('active');
+    modeToggle.classList.remove('visually-mode');
+    modeToggle.classList.add('isl-mode');
+    if (liveWorkspace) liveWorkspace.classList.remove('hidden');
+    if (visuallyWorkspace) visuallyWorkspace.classList.add('hidden');
     resetStreak();
     showToast('Switched to ISL');
   });
+
+  if (btnVisually) {
+    btnVisually.addEventListener('click', () => {
+      btnVisually.classList.add('active');
+      btnAsl.classList.remove('active');
+      btnIsl.classList.remove('active');
+      modeToggle.classList.remove('isl-mode');
+      modeToggle.classList.add('visually-mode');
+      if (liveWorkspace) liveWorkspace.classList.add('hidden');
+      if (visuallyWorkspace) visuallyWorkspace.classList.remove('hidden');
+      activatePracticeStudio();
+      showToast('Practice Studio Active');
+    });
+  }
 
   // Settings sheet. Both thresholds are read live by processResult(),
   // so no restart is needed after a change.
@@ -1032,7 +1046,7 @@ function setupControls() {
   // Keyboard shortcuts
   document.addEventListener('keydown', (e) => {
     // Ignore shortcuts while a control has focus, or a sheet is open.
-    if (e.target.closest('input, [popover]')) return;
+    if (e.target.closest('input, textarea, [popover]')) return;
 
     if (e.key === ' ' || e.code === 'Space') {
       e.preventDefault();
@@ -1045,6 +1059,8 @@ function setupControls() {
       btnAsl.click();
     } else if (e.key === '2') {
       btnIsl.click();
+    } else if (e.key === '3') {
+      if (btnVisually) btnVisually.click();
     }
   });
 }
@@ -1056,6 +1072,7 @@ window.addEventListener('DOMContentLoaded', async () => {
 
   // Wire controls FIRST: a camera failure must not leave every button dead.
   setupControls();
+  initPracticeStudio();
 
   setStatus('loading', 'Loading…');
   try {
@@ -1071,3 +1088,683 @@ window.addEventListener('DOMContentLoaded', async () => {
     showCameraError(err);
   }
 });
+
+// ══════════════════════════════════════════════════════════════════════════════
+// VISUALLY (PRACTICE STUDIO) IMPLEMENTATION
+// ══════════════════════════════════════════════════════════════════════════════
+
+let practiceTemplates = { asl: {}, isl: {} };
+let practiceDialect = 'asl'; // 'asl' | 'isl'
+let practiceSpeed = 1.0; // 0.5 | 1.0 | 1.5
+
+// Sequence and animation state
+let practiceSequence = []; // e.g. ['H', 'I', ' ', 'B', 'A', 'B', 'Y']
+let practiceCurrentIndex = 0;
+let practiceIsPlaying = false;
+let practiceStepStartTime = 0;
+let practiceAnimFrameId = null;
+
+// Poses for interpolation: arrays of 21 landmarks [x, y, z]
+let practiceFromPose = null;
+let practiceToPose = null;
+let practiceCurrentPose = null;
+
+// Default neutral resting pose (21 landmarks)
+const NEUTRAL_REST_POSE = Array(21).fill(0).map((_, i) => {
+  if (i === 0) return [0, 0, 0];
+  const fingerIdx = Math.floor((i - 1) / 4);
+  const jointIdx = ((i - 1) % 4) + 1;
+  const xOffset = (fingerIdx - 2) * 0.18;
+  const yOffset = -0.35 * jointIdx;
+  return [xOffset, yOffset, 0];
+});
+
+function initPracticeStudio() {
+  const canvas = document.getElementById('avatar-canvas');
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+
+  // 1. Fetch templates
+  fetch('/sign_templates.json')
+    .then(res => {
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      return res.json();
+    })
+    .then(data => {
+      practiceTemplates = data;
+      console.log('[PracticeStudio] Loaded sign templates:', Object.keys(data.asl || {}).length, 'ASL,', Object.keys(data.isl || {}).length, 'ISL');
+      // Set initial pose
+      practiceCurrentPose = clonePose(getTemplatePose('REST'));
+      drawAvatar();
+    })
+    .catch(err => {
+      console.warn('[PracticeStudio] Failed to load sign_templates.json:', err);
+    });
+
+  // 2. DOM elements
+  const txtInput = document.getElementById('practice-input');
+  const charCount = document.getElementById('practice-char-count');
+  const btnMic = document.getElementById('btn-mic');
+  const micLabel = document.getElementById('mic-label');
+  const btnSpeakInput = document.getElementById('btn-speak-input');
+  const btnClearPractice = document.getElementById('btn-clear-practice');
+  const btnStartSign = document.getElementById('btn-start-sign');
+  const sequenceChipsContainer = document.getElementById('sequence-chips');
+  const seqCounter = document.getElementById('seq-counter');
+
+  const btnPracAsl = document.getElementById('btn-practice-asl');
+  const btnPracIsl = document.getElementById('btn-practice-isl');
+
+  const hudChar = document.getElementById('hud-letter-char');
+  const hudSub = document.getElementById('hud-letter-sub');
+  const hudStatus = document.getElementById('avatar-hud-status');
+  const avatarStatusText = document.getElementById('avatar-status-text');
+
+  const btnPrev = document.getElementById('btn-avatar-prev');
+  const btnPlayPause = document.getElementById('btn-avatar-playpause');
+  const btnNext = document.getElementById('btn-avatar-next');
+  const btnReplay = document.getElementById('btn-avatar-replay');
+  const scrubber = document.getElementById('avatar-scrubber');
+
+  // Resize canvas handler
+  function resizeCanvas() {
+    if (!canvas.parentElement) return;
+    const rect = canvas.parentElement.getBoundingClientRect();
+    const dpr = window.devicePixelRatio || 1;
+    const w = Math.floor(rect.width);
+    const h = Math.floor(rect.height);
+    if (w > 0 && h > 0 && (canvas.width !== w * dpr || canvas.height !== h * dpr)) {
+      canvas.width = w * dpr;
+      canvas.height = h * dpr;
+      drawAvatar();
+    }
+  }
+  window.addEventListener('resize', resizeCanvas);
+  setTimeout(resizeCanvas, 100);
+
+  // Helper to clone a pose
+  function clonePose(pose) {
+    if (!pose) return JSON.parse(JSON.stringify(NEUTRAL_REST_POSE));
+    return pose.map(pt => [pt[0], pt[1], pt[2]]);
+  }
+
+  // Get template for a character
+  function getTemplatePose(char) {
+    const dict = practiceTemplates[practiceDialect] || practiceTemplates.asl || {};
+    const upper = String(char).toUpperCase();
+    if (dict[upper]) return dict[upper];
+    if (dict['REST']) return dict['REST'];
+    return NEUTRAL_REST_POSE;
+  }
+
+  // Dialect switch inside Practice
+  if (btnPracAsl && btnPracIsl) {
+    btnPracAsl.addEventListener('click', () => {
+      practiceDialect = 'asl';
+      btnPracAsl.classList.add('active');
+      btnPracIsl.classList.remove('active');
+      rebuildSequence(false);
+      showToast('Practice dialect: ASL');
+    });
+    btnPracIsl.addEventListener('click', () => {
+      practiceDialect = 'isl';
+      btnPracIsl.classList.add('active');
+      btnPracAsl.classList.remove('active');
+      rebuildSequence(false);
+      showToast('Practice dialect: ISL');
+    });
+  }
+
+  // Speed controls
+  document.querySelectorAll('.speed-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.speed-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      practiceSpeed = parseFloat(btn.dataset.speed) || 1.0;
+    });
+  });
+
+  // Quick sample chips
+  document.querySelectorAll('.sample-chip').forEach(chip => {
+    chip.addEventListener('click', () => {
+      const text = chip.dataset.text || '';
+      if (txtInput) {
+        txtInput.value = text;
+        updateCharCount();
+      }
+      rebuildSequence(true);
+    });
+  });
+
+  function updateCharCount() {
+    if (!txtInput || !charCount) return;
+    charCount.textContent = `${txtInput.value.length}/200`;
+  }
+
+  if (txtInput) {
+    txtInput.addEventListener('input', () => {
+      updateCharCount();
+      rebuildSequence(false);
+    });
+    txtInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        rebuildSequence(true);
+      }
+    });
+  }
+
+  if (btnClearPractice) {
+    btnClearPractice.addEventListener('click', () => {
+      if (txtInput) txtInput.value = '';
+      updateCharCount();
+      practiceSequence = [];
+      practiceCurrentIndex = 0;
+      pausePlayback();
+      renderSequenceChips();
+      updateHUD();
+      practiceCurrentPose = clonePose(getTemplatePose('REST'));
+      drawAvatar();
+    });
+  }
+
+  // Voice Speech-to-Text
+  if (btnMic) {
+    let recognition = null;
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+
+    if (SpeechRecognition) {
+      recognition = new SpeechRecognition();
+      recognition.continuous = false;
+      recognition.interimResults = false;
+      recognition.lang = 'en-US';
+
+      recognition.onstart = () => {
+        btnMic.classList.add('listening');
+        if (micLabel) micLabel.textContent = 'Listening…';
+        showToast('Speak now — listening…');
+      };
+
+      recognition.onresult = (event) => {
+        const transcript = event.results[0][0].transcript;
+        if (txtInput) {
+          txtInput.value = transcript.toUpperCase();
+          updateCharCount();
+          rebuildSequence(true);
+        }
+      };
+
+      recognition.onerror = (event) => {
+        console.warn('[PracticeStudio] Speech recognition error:', event.error);
+        btnMic.classList.remove('listening');
+        if (micLabel) micLabel.textContent = 'Speak';
+        showToast('Voice error: ' + event.error);
+      };
+
+      recognition.onend = () => {
+        btnMic.classList.remove('listening');
+        if (micLabel) micLabel.textContent = 'Speak';
+      };
+
+      btnMic.addEventListener('click', () => {
+        try {
+          if (btnMic.classList.contains('listening')) {
+            recognition.stop();
+          } else {
+            recognition.start();
+          }
+        } catch (err) {
+          console.warn('[PracticeStudio] Speech start exception:', err);
+        }
+      });
+    } else {
+      btnMic.addEventListener('click', () => {
+        showToast('Speech recognition not supported in this browser. Please type.');
+      });
+    }
+  }
+
+  // TTS speak aloud
+  if (btnSpeakInput) {
+    btnSpeakInput.addEventListener('click', () => {
+      const text = (txtInput ? txtInput.value.trim() : '');
+      if (!text) {
+        showToast('Type some words to speak aloud.');
+        return;
+      }
+      if ('speechSynthesis' in window) {
+        window.speechSynthesis.cancel();
+        const utter = new SpeechSynthesisUtterance(text);
+        utter.rate = 0.95;
+        window.speechSynthesis.speak(utter);
+      }
+    });
+  }
+
+  // Start Demonstration Button
+  if (btnStartSign) {
+    btnStartSign.addEventListener('click', () => {
+      rebuildSequence(true);
+    });
+  }
+
+  // Parse text into sequence of signs
+  function rebuildSequence(autoPlay = false) {
+    const raw = (txtInput ? txtInput.value : '').toUpperCase();
+    const cleanChars = [];
+    for (let i = 0; i < raw.length; i++) {
+      const ch = raw[i];
+      if ((ch >= 'A' && ch <= 'Z') || (ch >= '0' && ch <= '9')) {
+        cleanChars.push(ch);
+      } else if (ch === ' ' && cleanChars.length > 0 && cleanChars[cleanChars.length - 1] !== ' ') {
+        cleanChars.push(' ');
+      }
+    }
+    // Remove trailing space
+    if (cleanChars.length > 0 && cleanChars[cleanChars.length - 1] === ' ') {
+      cleanChars.pop();
+    }
+
+    practiceSequence = cleanChars;
+    practiceCurrentIndex = 0;
+    renderSequenceChips();
+    updateHUD();
+
+    if (practiceSequence.length === 0) {
+      practiceCurrentPose = clonePose(getTemplatePose('REST'));
+      drawAvatar();
+      return;
+    }
+
+    if (autoPlay) {
+      startPlayback();
+    } else {
+      jumpToStep(0);
+    }
+  }
+
+  function renderSequenceChips() {
+    if (!sequenceChipsContainer) return;
+    sequenceChipsContainer.innerHTML = '';
+
+    if (practiceSequence.length === 0) {
+      sequenceChipsContainer.innerHTML = '<span class="ph">Enter text above to preview gesture timeline…</span>';
+      if (seqCounter) seqCounter.textContent = '0 / 0';
+      if (scrubber) scrubber.value = 0;
+      return;
+    }
+
+    if (seqCounter) {
+      seqCounter.textContent = `${practiceCurrentIndex + 1} / ${practiceSequence.length}`;
+    }
+
+    practiceSequence.forEach((char, idx) => {
+      const chip = document.createElement('button');
+      chip.className = 'sequence-chip' + (char === ' ' ? ' is-space' : '') + (idx === practiceCurrentIndex ? ' active' : '');
+      chip.textContent = (char === ' ' ? '␣' : char);
+      chip.title = (char === ' ' ? 'Space (Rest pause)' : `Letter ${char}`);
+      chip.addEventListener('click', () => {
+        jumpToStep(idx);
+      });
+      sequenceChipsContainer.appendChild(chip);
+    });
+
+    if (scrubber) {
+      const pct = (practiceSequence.length > 1) ? (practiceCurrentIndex / (practiceSequence.length - 1)) * 100 : 0;
+      scrubber.value = pct;
+    }
+  }
+
+  function updateHUD() {
+    if (practiceSequence.length === 0) {
+      if (hudChar) hudChar.textContent = '—';
+      if (hudSub) hudSub.textContent = 'Waiting for input';
+      if (avatarStatusText) avatarStatusText.textContent = 'Ready';
+      if (hudStatus) hudStatus.classList.remove('playing');
+      return;
+    }
+
+    const currChar = practiceSequence[practiceCurrentIndex];
+    if (hudChar) {
+      hudChar.textContent = (currChar === ' ' ? '␣' : currChar);
+    }
+    if (hudSub) {
+      if (currChar === ' ') {
+        hudSub.textContent = `Word Boundary Pause (${practiceCurrentIndex + 1}/${practiceSequence.length})`;
+      } else {
+        hudSub.textContent = `${practiceDialect.toUpperCase()} Sign • Step ${practiceCurrentIndex + 1} of ${practiceSequence.length}`;
+      }
+    }
+    if (avatarStatusText) {
+      avatarStatusText.textContent = practiceIsPlaying ? 'Demonstrating…' : 'Paused';
+    }
+    if (hudStatus) {
+      if (practiceIsPlaying) hudStatus.classList.add('playing');
+      else hudStatus.classList.remove('playing');
+    }
+  }
+
+  function jumpToStep(idx) {
+    if (practiceSequence.length === 0) return;
+    practiceCurrentIndex = Math.max(0, Math.min(idx, practiceSequence.length - 1));
+    const char = practiceSequence[practiceCurrentIndex];
+    practiceFromPose = practiceCurrentPose ? clonePose(practiceCurrentPose) : clonePose(getTemplatePose('REST'));
+    practiceToPose = clonePose(getTemplatePose(char === ' ' ? 'REST' : char));
+    practiceStepStartTime = performance.now();
+    renderSequenceChips();
+    updateHUD();
+
+    // Scroll active chip into view
+    const activeChip = sequenceChipsContainer ? sequenceChipsContainer.children[practiceCurrentIndex] : null;
+    if (activeChip && activeChip.scrollIntoView) {
+      activeChip.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
+    }
+  }
+
+  function startPlayback() {
+    if (practiceSequence.length === 0) return;
+    practiceIsPlaying = true;
+    if (btnPlayPause) btnPlayPause.textContent = '⏸';
+    jumpToStep(practiceCurrentIndex);
+    updateHUD();
+  }
+
+  function pausePlayback() {
+    practiceIsPlaying = false;
+    if (btnPlayPause) btnPlayPause.textContent = '▶';
+    updateHUD();
+  }
+
+  // Playback control buttons
+  if (btnPlayPause) {
+    btnPlayPause.addEventListener('click', () => {
+      if (practiceIsPlaying) {
+        pausePlayback();
+      } else {
+        if (practiceCurrentIndex >= practiceSequence.length - 1) {
+          practiceCurrentIndex = 0;
+        }
+        startPlayback();
+      }
+    });
+  }
+
+  if (btnPrev) {
+    btnPrev.addEventListener('click', () => {
+      pausePlayback();
+      jumpToStep(practiceCurrentIndex - 1);
+    });
+  }
+
+  if (btnNext) {
+    btnNext.addEventListener('click', () => {
+      pausePlayback();
+      jumpToStep(practiceCurrentIndex + 1);
+    });
+  }
+
+  if (btnReplay) {
+    btnReplay.addEventListener('click', () => {
+      practiceCurrentIndex = 0;
+      startPlayback();
+    });
+  }
+
+  if (scrubber) {
+    scrubber.addEventListener('input', () => {
+      if (practiceSequence.length === 0) return;
+      pausePlayback();
+      const val = parseFloat(scrubber.value);
+      const targetIdx = Math.round((val / 100) * (practiceSequence.length - 1));
+      jumpToStep(targetIdx);
+    });
+  }
+
+  // Interpolation & Render Loop
+  function lerp(a, b, t) {
+    return a + (b - a) * t;
+  }
+
+  function easeInOutCubic(x) {
+    return x < 0.5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2;
+  }
+
+  function avatarAnimationLoop(now) {
+    practiceAnimFrameId = requestAnimationFrame(avatarAnimationLoop);
+
+    // Calculate step timing based on speed
+    const transitionMs = 450 / practiceSpeed;
+    const holdMs = 700 / practiceSpeed;
+    const totalStepMs = transitionMs + holdMs;
+
+    if (practiceToPose && practiceFromPose) {
+      const elapsed = now - practiceStepStartTime;
+      const progress = Math.min(1.0, elapsed / transitionMs);
+      const t = easeInOutCubic(progress);
+
+      if (!practiceCurrentPose) {
+        practiceCurrentPose = clonePose(practiceFromPose);
+      }
+
+      for (let i = 0; i < 21; i++) {
+        practiceCurrentPose[i][0] = lerp(practiceFromPose[i][0], practiceToPose[i][0], t);
+        practiceCurrentPose[i][1] = lerp(practiceFromPose[i][1], practiceToPose[i][1], t);
+        practiceCurrentPose[i][2] = lerp(practiceFromPose[i][2], practiceToPose[i][2], t);
+      }
+
+      if (practiceIsPlaying && elapsed >= totalStepMs) {
+        if (practiceCurrentIndex < practiceSequence.length - 1) {
+          jumpToStep(practiceCurrentIndex + 1);
+        } else {
+          // Completed full sequence
+          pausePlayback();
+          if (avatarStatusText) avatarStatusText.textContent = 'Complete';
+        }
+      }
+    }
+
+    drawAvatar();
+  }
+
+  // Draw Avatar Canvas
+  function drawAvatar() {
+    if (!canvas || !ctx) return;
+    const dpr = window.devicePixelRatio || 1;
+    const w = canvas.width;
+    const h = canvas.height;
+
+    ctx.save();
+    ctx.clearRect(0, 0, w, h);
+
+    // 1. Clean sleek dark studio background
+    ctx.fillStyle = '#161619';
+    ctx.fillRect(0, 0, w, h);
+
+    // 2. Stylized Red Silhouette Avatar (Head, Face, Torso, Arms - matching RyloTranslate)
+    const red = '#d82222';
+    ctx.strokeStyle = red;
+    ctx.fillStyle = red;
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    ctx.shadowBlur = 0;
+
+    // Shoulder & torso anchor points
+    const shoulderY = h * 0.48;
+    const leftShoulderX = w * 0.33;
+    const rightShoulderX = w * 0.71;
+
+    // Head dimensions
+    const headCx = w * 0.51;
+    const headCy = h * 0.25;
+    const headRx = w * 0.082;
+    const headRy = h * 0.125;
+
+    // Head contour
+    ctx.lineWidth = 5 * dpr;
+    ctx.beginPath();
+    ctx.ellipse(headCx, headCy, headRx, headRy, 0, 0, Math.PI * 2);
+    ctx.stroke();
+
+    // Eyebrows (bold expressive arches)
+    ctx.lineWidth = 7 * dpr;
+    ctx.beginPath();
+    ctx.arc(headCx - headRx * 0.44, headCy - headRy * 0.35, headRx * 0.34, Math.PI * 1.1, Math.PI * 1.9, false);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(headCx + headRx * 0.44, headCy - headRy * 0.35, headRx * 0.34, Math.PI * 1.1, Math.PI * 1.9, false);
+    ctx.stroke();
+
+    // Eyes (almond shaped contours)
+    ctx.lineWidth = 3.5 * dpr;
+    ctx.beginPath();
+    ctx.ellipse(headCx - headRx * 0.42, headCy - headRy * 0.12, headRx * 0.24, headRy * 0.12, 0, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.ellipse(headCx + headRx * 0.42, headCy - headRy * 0.12, headRx * 0.24, headRy * 0.12, 0, 0, Math.PI * 2);
+    ctx.stroke();
+
+    // Mouth (expressive open oval)
+    ctx.lineWidth = 4.5 * dpr;
+    ctx.beginPath();
+    ctx.ellipse(headCx, headCy + headRy * 0.38, headRx * 0.32, headRy * 0.16, 0, 0, Math.PI * 2);
+    ctx.stroke();
+
+    // Torso Frame:
+    ctx.lineWidth = 5 * dpr;
+
+    // Clavicle / shoulder horizontal bar
+    ctx.beginPath();
+    ctx.moveTo(leftShoulderX, shoulderY);
+    ctx.lineTo(rightShoulderX, shoulderY);
+    ctx.stroke();
+
+    // Torso body lines (tapering downwards)
+    ctx.beginPath();
+    ctx.moveTo(leftShoulderX, shoulderY);
+    ctx.lineTo(w * 0.39, h * 0.98);
+    ctx.moveTo(rightShoulderX, shoulderY);
+    ctx.lineTo(w * 0.65, h * 0.98);
+    ctx.stroke();
+
+    // Signing Right Arm (viewer left): Shoulder -> Elbow -> Wrist
+    const elbowL_X = w * 0.24;
+    const elbowL_Y = h * 0.84;
+    const wristX = w * 0.31;
+    const wristY = h * 0.65;
+
+    ctx.beginPath();
+    ctx.moveTo(leftShoulderX, shoulderY);
+    ctx.lineTo(elbowL_X, elbowL_Y);
+    ctx.lineTo(wristX, wristY);
+    ctx.stroke();
+
+    // Resting Left Arm (viewer right): Shoulder -> Elbow -> Forearm
+    const elbowR_X = w * 0.76;
+    const elbowR_Y = h * 0.82;
+    ctx.beginPath();
+    ctx.moveTo(rightShoulderX, shoulderY);
+    ctx.lineTo(elbowR_X, elbowR_Y);
+    ctx.lineTo(w * 0.68, h * 0.98);
+    ctx.stroke();
+
+    // 3. Hand Skeleton (Vibrant 5-Finger Colors & Palm Metacarpals matching RyloTranslate)
+    if (practiceCurrentPose && practiceCurrentPose.length === 21) {
+      const scale = Math.min(w * 0.22, h * 0.22);
+
+      // Project landmarks to screen coordinates
+      const pts = practiceCurrentPose.map(pt => {
+        const lx = pt[0];
+        const ly = pt[1];
+        const lz = pt[2] || 0;
+        const depth = 1.0 / (1.0 - lz * 0.18);
+        return [
+          wristX + lx * scale * depth,
+          wristY + ly * scale * depth,
+          lz
+        ];
+      });
+
+      // Palm Metacarpal Structure (cool titanium slate connecting wrist to the 4 knuckles)
+      const palmCol = 'rgba(145, 160, 175, 0.85)';
+      ctx.strokeStyle = palmCol;
+      ctx.lineWidth = 3.5 * dpr;
+
+      // Metacarpal rays: wrist to MCPs (5, 9, 13, 17)
+      [5, 9, 13, 17].forEach(mcp => {
+        ctx.beginPath();
+        ctx.moveTo(wristX, wristY);
+        ctx.lineTo(pts[mcp][0], pts[mcp][1]);
+        ctx.stroke();
+      });
+
+      // Knuckle transverse arch: connecting MCP 5 -> 9 -> 13 -> 17
+      ctx.lineWidth = 4.5 * dpr;
+      ctx.beginPath();
+      ctx.moveTo(pts[5][0], pts[5][1]);
+      ctx.lineTo(pts[9][0], pts[9][1]);
+      ctx.lineTo(pts[13][0], pts[13][1]);
+      ctx.lineTo(pts[17][0], pts[17][1]);
+      ctx.stroke();
+
+      // Finger Segments with exact reference colors:
+      // Thumb: Coral / Red-Pink (wrist 0 -> 1 -> 2 -> 3 -> 4)
+      // Index: Deep Electric Blue (5 -> 6 -> 7 -> 8)
+      // Middle: Bright Emerald Green (9 -> 10 -> 11 -> 12)
+      // Ring: Vibrant Cyan (13 -> 14 -> 15 -> 16)
+      // Pinky: Warm Orange (17 -> 18 -> 19 -> 20)
+      const fingerGroups = [
+        { indices: [0, 1, 2, 3, 4],    color: '#ff4d4d', width: 6.5 * dpr }, // Thumb
+        { indices: [5, 6, 7, 8],        color: '#2979ff', width: 6.5 * dpr }, // Index
+        { indices: [9, 10, 11, 12],     color: '#00e676', width: 6.5 * dpr }, // Middle
+        { indices: [13, 14, 15, 16],    color: '#00e5ff', width: 6.5 * dpr }, // Ring
+        { indices: [17, 18, 19, 20],    color: '#ff9800', width: 6.5 * dpr }, // Pinky
+      ];
+
+      fingerGroups.forEach(group => {
+        ctx.strokeStyle = group.color;
+        ctx.lineWidth = group.width;
+        for (let k = 0; k < group.indices.length - 1; k++) {
+          const i1 = group.indices[k];
+          const i2 = group.indices[k + 1];
+          ctx.beginPath();
+          ctx.moveTo(pts[i1][0], pts[i1][1]);
+          ctx.lineTo(pts[i2][0], pts[i2][1]);
+          ctx.stroke();
+        }
+      });
+
+      // Small clean joint caps
+      ctx.fillStyle = '#ffffff';
+      pts.forEach((pt, idx) => {
+        if (idx === 0) return; // Skip wrist, drawn specially below
+        const radius = (idx % 4 === 0) ? 2.5 * dpr : 2.0 * dpr;
+        ctx.beginPath();
+        ctx.arc(pt[0], pt[1], radius, 0, Math.PI * 2);
+        ctx.fill();
+      });
+
+      // Wrist Joint: Clean pearl white bead
+      ctx.fillStyle = '#ffffff';
+      ctx.beginPath();
+      ctx.arc(wristX, wristY, 5 * dpr, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    ctx.restore();
+  }
+
+  // Start animation loop
+  requestAnimationFrame(avatarAnimationLoop);
+}
+
+function activatePracticeStudio() {
+  const canvas = document.getElementById('avatar-canvas');
+  if (canvas && canvas.parentElement) {
+    const rect = canvas.parentElement.getBoundingClientRect();
+    const dpr = window.devicePixelRatio || 1;
+    if (rect.width > 0 && rect.height > 0) {
+      canvas.width = Math.floor(rect.width) * dpr;
+      canvas.height = Math.floor(rect.height) * dpr;
+    }
+  }
+}

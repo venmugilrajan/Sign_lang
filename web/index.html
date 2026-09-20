@@ -9,7 +9,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600;700&family=Geist+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="style.css" />
+  <link rel="stylesheet" href="style.css?v=2" />
 
   <!-- MediaPipe Tasks Vision loaded dynamically inside app.js initMediaPipe() -->
 </head>
@@ -31,6 +31,7 @@
   <div class="mode-toggle" id="mode-toggle" role="group" aria-label="Sign language">
     <button class="mode-btn active" data-mode="asl" id="btn-asl" aria-pressed="true">ASL</button>
     <button class="mode-btn" data-mode="isl" id="btn-isl" aria-pressed="false">ISL</button>
+    <button class="mode-btn" data-mode="visually" id="btn-visually" aria-pressed="false">VISUALLY</button>
     <span class="mode-slider" aria-hidden="true"></span>
   </div>
 
@@ -44,8 +45,8 @@
   </div>
 </header>
 
-<!-- ══ WORKSPACE ════════════════════════════════════════════════════════ -->
-<main class="workspace">
+<!-- ══ WORKSPACE (LIVE CAMERA) ═════════════════════════════════════════ -->
+<main class="workspace" id="live-workspace">
 
   <!-- ── Camera stage ────────────────────────────────────────────────── -->
   <section class="stage" aria-label="Camera">
@@ -126,6 +127,111 @@
   </aside>
 </main>
 
+<!-- ══ VISUALLY (PRACTICE STUDIO) ════════════════════════════════════════ -->
+<section class="workspace visually-workspace hidden" id="visually-workspace" aria-label="Practice Studio">
+  <!-- Left Column: Input, Speech Dictation, and Sequence Breakdown -->
+  <aside class="practice-input-rail">
+    <article class="panel panel-grow practice-panel">
+      <header class="panel-head">
+        <div class="practice-head-title">
+          <span class="practice-badge">PRACTICE STUDIO</span>
+          <h2 class="panel-title">Text to Sign</h2>
+        </div>
+        <div class="practice-dialect-toggle" id="practice-dialect-toggle">
+          <button class="dialect-pill active" id="btn-practice-asl">ASL</button>
+          <button class="dialect-pill" id="btn-practice-isl">ISL</button>
+        </div>
+      </header>
+
+      <!-- Textarea with integrated voice mic & actions -->
+      <div class="practice-textarea-box">
+        <textarea id="practice-input" placeholder="Type words or sentence (e.g. 'HI BABY', 'HOW ARE YOU')..." rows="4"></textarea>
+        <div class="practice-input-tools">
+          <button class="tool-btn mic-btn" id="btn-mic" title="Voice Input (Speech-to-Sign)">
+            <svg class="icon" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3zm5-3c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z"/>
+            </svg>
+            <span id="mic-label">Speak</span>
+          </button>
+          <button class="tool-btn" id="btn-speak-input" title="Speak text aloud">
+            <svg class="icon" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z"/>
+            </svg>
+          </button>
+          <button class="tool-btn" id="btn-clear-practice" title="Clear text">Clear</button>
+          <span class="char-count" id="practice-char-count">0/200</span>
+        </div>
+      </div>
+
+      <!-- Quick sample prompts -->
+      <div class="quick-samples">
+        <span class="quick-label">Try:</span>
+        <button class="sample-chip" data-text="HI">HI</button>
+        <button class="sample-chip" data-text="HELLO">HELLO</button>
+        <button class="sample-chip" data-text="THANK YOU">THANK YOU</button>
+        <button class="sample-chip" data-text="HOW ARE YOU">HOW ARE YOU</button>
+        <button class="sample-chip" data-text="BABY">BABY</button>
+      </div>
+
+      <!-- Main Trigger & Speed -->
+      <div class="practice-action-row">
+        <button class="btn btn-primary btn-demo" id="btn-start-sign">
+          <svg class="icon-play" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+          <span>Demonstrate Sign</span>
+        </button>
+
+        <div class="speed-control">
+          <span class="speed-label">Speed</span>
+          <button class="speed-btn" data-speed="0.5">0.5x</button>
+          <button class="speed-btn active" data-speed="1.0">1.0x</button>
+          <button class="speed-btn" data-speed="1.5">1.5x</button>
+        </div>
+      </div>
+
+      <!-- Letter Tape Progression -->
+      <div class="sequence-section">
+        <div class="sequence-head">
+          <span class="seq-title">Sign Sequence Timeline</span>
+          <span class="seq-counter" id="seq-counter">0 / 0</span>
+        </div>
+        <div class="sequence-chips" id="sequence-chips">
+          <span class="ph">Enter text above to preview gesture timeline…</span>
+        </div>
+      </div>
+    </article>
+  </aside>
+
+  <!-- Right Column: Interactive 3D Avatar Skeleton Stage -->
+  <section class="practice-stage" aria-label="Avatar Stage">
+    <div class="avatar-viewport">
+      <canvas id="avatar-canvas"></canvas>
+
+      <!-- Active Letter Glow Badge -->
+      <div class="avatar-hud-letter" id="avatar-hud-letter">
+        <span class="hud-letter-char" id="hud-letter-char">—</span>
+        <span class="hud-letter-sub" id="hud-letter-sub">Waiting for input</span>
+      </div>
+
+      <!-- Avatar Status Badge -->
+      <div class="avatar-hud-status" id="avatar-hud-status">
+        <span class="status-badge-dot"></span>
+        <span id="avatar-status-text">Ready</span>
+      </div>
+
+      <!-- Playback Controls Floating Bar -->
+      <div class="avatar-controls-bar">
+        <button class="avatar-ctrl-btn" id="btn-avatar-prev" title="Previous letter">⏮</button>
+        <button class="avatar-ctrl-btn play-pause-btn" id="btn-avatar-playpause" title="Play/Pause">⏸</button>
+        <button class="avatar-ctrl-btn" id="btn-avatar-next" title="Next letter">⏭</button>
+        <button class="avatar-ctrl-btn" id="btn-avatar-replay" title="Replay all">⟲</button>
+        <div class="avatar-progress-wrap">
+          <input type="range" class="avatar-scrubber" id="avatar-scrubber" min="0" max="100" value="0" step="0.1" />
+        </div>
+      </div>
+    </div>
+  </section>
+</section>
+
 <!-- ══ SETTINGS (top layer) ═════════════════════════════════════════════ -->
 <div popover id="panel-settings" class="sheet">
   <header class="sheet-head">
@@ -180,10 +286,11 @@
     <div class="key-row"><kbd>Backspace</kbd><span>Delete last letter</span></div>
     <div class="key-row"><kbd>1</kbd><span>Switch to ASL</span></div>
     <div class="key-row"><kbd>2</kbd><span>Switch to ISL</span></div>
+    <div class="key-row"><kbd>3</kbd><span>Switch to Practice (VISUALLY)</span></div>
   </div>
 </div>
 
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
-<script src="app.js"></script>
+<script src="app.js?v=3"></script>
 </body>
 </html>
