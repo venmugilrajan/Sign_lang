@@ -692,8 +692,9 @@ function adaptResults(result) {
     const lms = rawLandmarks[i];
     if (!lms || lms.length < 21) continue;
 
-    // Geometric validation to reject facial false positives (e.g. nose / glasses bridge)
+    // Strict anatomical validation to reject facial false positives (forehead, eyebrows, spectacles, nose)
     const palmLen = Math.hypot(lms[9].x - lms[0].x, lms[9].y - lms[0].y);
+    const palmWidth = Math.hypot(lms[17].x - lms[5].x, lms[17].y - lms[5].y);
     let minX = 1, maxX = 0, minY = 1, maxY = 0;
     for (let j = 0; j < lms.length; j++) {
       const p = lms[j];
@@ -702,8 +703,10 @@ function adaptResults(result) {
       if (p.y < minY) minY = p.y;
       if (p.y > maxY) maxY = p.y;
     }
-    const bboxDiag = Math.hypot(maxX - minX, maxY - minY);
-    if (palmLen < 0.04 || bboxDiag < 0.08) {
+    const bw = maxX - minX;
+    const bh = maxY - minY;
+    const aspect = Math.max(bw, bh) / Math.max(Math.min(bw, bh), 1e-4);
+    if (palmLen < 0.05 || (palmWidth / Math.max(palmLen, 1e-4)) < 0.30 || aspect > 2.6) {
       continue;
     }
 

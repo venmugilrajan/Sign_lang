@@ -36,8 +36,8 @@ ASL_MODEL_PATH = os.path.join(BASE_DIR, "models", "asl_landmark_model.pkl")
 ISL_MODEL_PATH = os.path.join(BASE_DIR, "models", "isl_landmark_model.pkl")
 
 # Live Thresholds
-MIN_DETECTION_CONF = 0.50   # Standard confidence threshold (prevents false hand detection on nose/face)
-CONF_THRESHOLD = 0.50       # Letter acceptance threshold (filters low-confidence prediction noise)
+MIN_DETECTION_CONF = 0.60   # Robust confidence threshold (prevents false hand detection on face/forehead/eyebrow)
+CONF_THRESHOLD = 0.55       # Letter acceptance threshold (filters low-confidence prediction noise)
 STABLE_FRAMES_NEEDED = 5    # Consecutive frames required to confirm letter
 RELEASE_FRAMES_NEEDED = 2   # Frames to confirm hand release for double letters
 NO_HAND_WORD_TIMEOUT = 2.0  # Seconds to auto-commit word on hand drop
@@ -154,18 +154,17 @@ def calculate_angle_3d(a, b, c):
 
 class LandmarkSignTranslator:
     def __init__(self):
-        # 1. Initialize MediaPipe Hand Detector in VIDEO mode for smooth temporal tracking (eliminates jitter)
+        # 1. Initialize MediaPipe Hand Detector in IMAGE mode (evaluates fresh palm detection on every frame,
+        #    preventing VIDEO mode's internal tracker from latching onto face/eyebrow/spectacles textures)
         base_options = python.BaseOptions(model_asset_path=TASK_PATH)
         options = vision.HandLandmarkerOptions(
             base_options=base_options,
-            running_mode=vision.RunningMode.VIDEO,
+            running_mode=vision.RunningMode.IMAGE,
             num_hands=2,
             min_hand_detection_confidence=MIN_DETECTION_CONF,
-            min_hand_presence_confidence=MIN_DETECTION_CONF,
-            min_tracking_confidence=MIN_DETECTION_CONF
+            min_hand_presence_confidence=MIN_DETECTION_CONF
         )
         self.detector = vision.HandLandmarker.create_from_options(options)
-        self.frame_timestamp_ms = 0
 
         # 2. Word Buffer State Machine & Corrector
         self.corrector = TwoTierSpellCorrector()
@@ -283,13 +282,8 @@ class LandmarkSignTranslator:
         frame_rgb = cv2.cvtColor(det_frame, cv2.COLOR_BGR2RGB)
         mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=frame_rgb)
         
-        # Advance monotonic millisecond timestamp for temporal tracking
-        now_ms = int(time.time() * 1000)
-        if now_ms <= self.frame_timestamp_ms:
-            now_ms = self.frame_timestamp_ms + 1
-        self.frame_timestamp_ms = now_ms
-
-        results = self.detector.detect_for_video(mp_image, self.frame_timestamp_ms)
+        # Fresh palm detection per frame (no sticky tracker)
+        results = self.detector.detect(mp_image)
 
         if not results.hand_landmarks:
             return None, [], "None"
@@ -305,18 +299,27 @@ class LandmarkSignTranslator:
         hands_data = []
 
         for idx, landmarks in enumerate(results.hand_landmarks):
-            # Geometric validation to reject false positives (e.g. nose, spectacles bridge, nostrils)
+            # Strict Anatomical Validation:
+            # Rejects facial false positives (forehead, eyebrows, spectacles, nose)
             # 1. Palm length: distance between wrist (0) and middle finger MCP base (9)
             palm_len = math.hypot(landmarks[9].x - landmarks[0].x, landmarks[9].y - landmarks[0].y)
 
-            # 2. Hand bounding box diagonal in normalized coordinates
+            # 2. Palm breadth: distance between Index MCP (5) and Pinky MCP (17)
+            palm_width = math.hypot(landmarks[17].x - landmarks[5].x, landmarks[17].y - landmarks[5].y)
+
+            # 3. Bounding box & aspect ratio
             xs = [lm.x for lm in landmarks]
             ys = [lm.y for lm in landmarks]
-            bbox_diag = math.hypot(max(xs) - min(xs), max(ys) - min(ys))
+            bw = max(xs) - min(xs)
+            bh = max(ys) - min(ys)
+            aspect_ratio = max(bw, bh) / max(min(bw, bh), 1e-4)
 
-            # A real hand in front of the camera has palm_len >= 0.04 and bbox_diag >= 0.08
-            # Micro-clusters on the nose or facial features fail this test
-            if palm_len < 0.04 or bbox_diag < 0.08:
+            # Rejection criteria:
+            # - Real human hand palm length is at least 0.05 of the frame
+            # - Real human palm breadth is proportional: palm_width / palm_len >= 0.30
+            #   (On forehead/eyebrow hallucinations, knuckles are clumped in a single stripe: ratio < 0.20)
+            # - Real human hand aspect ratio <= 2.6 (eyebrow hallucination is > 3.2 horizontal stripe)
+            if palm_len < 0.05 or (palm_width / max(palm_len, 1e-4)) < 0.30 or aspect_ratio > 2.6:
                 continue
 
             h_name = "Right"
