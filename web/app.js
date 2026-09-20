@@ -699,8 +699,14 @@ async function initMediaPipe() {
     return false;
   }
 
-  // Resolve WASM files from the same CDN version as the script
-  // vision_bundle.js exposes FilesetResolver and HandLandmarker directly on window
+  // Dynamically import the Tasks Vision ES-module bundle.
+  // More reliable than a <script> UMD tag: exports land directly in scope,
+  // no window.* namespace hunting required.
+  const { FilesetResolver, HandLandmarker } = await import(
+    'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/vision_bundle.mjs'
+  );
+
+  // Resolve WASM files from the same CDN version
   const vision = await FilesetResolver.forVisionTasks(
     'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm'
   );
