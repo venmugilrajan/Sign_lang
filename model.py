@@ -61,7 +61,7 @@ def load_model(checkpoint_path: str, num_classes: int, device: torch.device) -> 
     model.load_state_dict(checkpoint["model_state_dict"])
     model.to(device)
     model.eval()
-    print(f"[✓] Loaded model from {checkpoint_path} | Classes: {num_classes} | Device: {device}")
+    print(f"[OK] Loaded model from {checkpoint_path} | Classes: {num_classes} | Device: {device}")
     return model
 
 

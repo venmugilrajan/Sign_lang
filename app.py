@@ -233,6 +233,6 @@ if __name__ == "__main__":
     print("  Sign Language Translation API")
     print("=" * 60)
     load_all_models()
-    print(f"\n[→] Server starting on http://localhost:5000")
-    print(f"[→] Endpoints: GET /health | GET /classes | POST /predict_landmarks | POST /predict | POST /spellcheck\n")
+    print(f"\n[->] Server starting on http://localhost:5000")
+    print(f"[->] Endpoints: GET /health | GET /classes | POST /predict_landmarks | POST /predict | POST /spellcheck\n")
     app.run(host="0.0.0.0", port=5000, debug=False)

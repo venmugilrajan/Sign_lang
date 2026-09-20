@@ -62,10 +62,17 @@ const RELEASE_FRAMES_NEEDED = 3;
 // State tracking to prevent runaway word repeat without clear user intent
 let lastCommittedWord = '';
 
-// Trained Neural Network model weights loaded from JSON
+// Trained Neural Network model weights (kept for OFFLINE fallback only)
 let aslWeights     = null;
 let islWeights     = null;
 let currentWeights = null;
+
+// ── Server-side inference state ──────────────────────────────────────────────
+// When Flask is running, all classification is done server-side (predict_proba
+// on the sklearn model) for feature parity with run_native.py.
+// If the server is unreachable, we fall back to the JS MLP.
+let serverAvailable   = false;   // set true after first successful /health probe
+let serverCheckPending = false;
 
 // ── DOM ──────────────────────────────────────────────────────────────────────
 const video           = document.getElementById('webcam-video');
@@ -297,32 +304,52 @@ function softmax(arr) {
   return exps.map(x => x / sum);
 }
 
-/** Load MLP weights from JSON files */
+/**
+ * Probes /health to find out whether the Flask backend is up.
+ * Called once at startup and retried whenever a classify() call fails.
+ */
+async function probeServer() {
+  if (serverCheckPending) return;
+  serverCheckPending = true;
+  try {
+    const r = await fetch('/health', { signal: AbortSignal.timeout(1500) });
+    if (r.ok) {
+      if (!serverAvailable) {
+        serverAvailable = true;
+        console.log('✅ Flask backend detected — using server-side inference');
+        setStatus('ready', 'Connected (server)');
+      }
+    } else {
+      serverAvailable = false;
+    }
+  } catch {
+    serverAvailable = false;
+  } finally {
+    serverCheckPending = false;
+  }
+}
+
+/** Load MLP weights from JSON files (used for OFFLINE fallback only) */
 async function loadLandmarkModel() {
   try {
     const resAsl = await fetch('asl_landmarks_weights.json');
     if (resAsl.ok) {
       aslWeights = await resAsl.json();
-      console.log("🧠 ASL Neural Network loaded!");
+      console.log('🧠 ASL Neural Network loaded (offline fallback)');
     }
     const resIsl = await fetch('isl_landmarks_weights.json');
     if (resIsl.ok) {
       islWeights = await resIsl.json();
-      console.log("🧠 ISL Neural Network loaded!");
+      console.log('🧠 ISL Neural Network loaded (offline fallback)');
     }
     currentWeights = currentMode === 'asl' ? aslWeights : islWeights;
   } catch (err) {
-    console.error("Failed to load MLP weights:", err);
-    showToast("⚠️ Neural network weights not fully loaded.", 4000);
+    console.error('Failed to load MLP weights:', err);
   }
 }
 
-/** Classify hand landmarks using dynamic 2 or 3-layer neural network model */
 /**
- * Assembles the vector the active model expects.
- *  - single-hand (78-D): the first detected hand
- *  - dual-hand (156-D): slot 1 = leftmost hand on screen, slot 2 = rightmost
- *    (zeros when only one hand is up)
+ * Assembles the 78-D (single-hand) or 156-D (dual-hand) feature vector.
  *
  * Sorting is on the RAW wrist x of the unflipped frame, identical to
  * run_native.extract_landmarks(). If these two ever disagree, every
@@ -332,7 +359,7 @@ function buildFeatureVector(multiHandLandmarks, isDualMode, multiHandedness, w, 
   if (!isDualMode) {
     const handedness = (multiHandedness && multiHandedness[0] && multiHandedness[0].label)
       ? multiHandedness[0].label
-      : "Right";
+      : 'Right';
     // In ASL single hand mode, mirror Left hands to match Right hand dataset
     return normalizeLandmarks(multiHandLandmarks[0], w, h, handedness, true);
   }
@@ -341,7 +368,7 @@ function buildFeatureVector(multiHandLandmarks, isDualMode, multiHandedness, w, 
     .map((lm, idx) => {
       const handedness = (multiHandedness && multiHandedness[idx] && multiHandedness[idx].label)
         ? multiHandedness[idx].label
-        : "Right";
+        : 'Right';
       return { x: lm[0].x, feat: normalizeLandmarks(lm, w, h, handedness, false) };
     })
     .sort((a, b) => a.x - b.x);
@@ -373,27 +400,20 @@ function isValidHand(lm) {
   return true;
 }
 
-function classify(multiHandLandmarks, multiHandedness) {
-  if (!currentWeights || !multiHandLandmarks || multiHandLandmarks.length === 0) {
-    return { letter: 'nothing', confidence: 0.0 };
-  }
+/**
+ * JS MLP fallback — used ONLY when Flask server is unreachable.
+ * Runs the MLP forward pass in-browser using the cached weight JSON.
+ */
+function classifyJS(featureVector) {
+  if (!currentWeights) return { letter: 'nothing', confidence: 0.0 };
 
-  // 1. Prepare feature vector (78 single-hand, or 156 dual-hand)
-  const isDualMode = currentWeights.w0.length === 156;
-  const x = buildFeatureVector(multiHandLandmarks, isDualMode, multiHandedness);
-
+  const x = featureVector;
   if (x.length !== currentWeights.w0.length) {
-    console.error(`Feature/weight mismatch: built ${x.length}-D, model expects ${currentWeights.w0.length}-D`);
     return { letter: 'nothing', confidence: 0.0 };
   }
 
-  // Layer 0
   let h = relu(matMul(x, currentWeights.w0, currentWeights.b0));
-
-  // Layer 1
   h = relu(matMul(h, currentWeights.w1, currentWeights.b1));
-
-  // Layer 2 (if present)
   if (currentWeights.w2 && currentWeights.b2) {
     if (currentWeights.w3 && currentWeights.b3) {
       h = relu(matMul(h, currentWeights.w2, currentWeights.b2));
@@ -403,33 +423,75 @@ function classify(multiHandLandmarks, multiHandedness) {
     }
   }
 
-  // Softmax to get probabilities
   const probs = softmax(h);
-
-  // Find top 2 probabilities to check margin
-  let maxIdx = 0;
-  let maxProb = 0;
-  let secondProb = 0;
+  let maxIdx = 0, maxProb = 0, secondProb = 0;
   for (let i = 0; i < probs.length; i++) {
-    if (probs[i] > maxProb) {
-      secondProb = maxProb;
-      maxProb = probs[i];
-      maxIdx = i;
-    } else if (probs[i] > secondProb) {
-      secondProb = probs[i];
-    }
+    if (probs[i] > maxProb) { secondProb = maxProb; maxProb = probs[i]; maxIdx = i; }
+    else if (probs[i] > secondProb) { secondProb = probs[i]; }
   }
-
-  // Require clear margin (at least 0.08 difference between 1st and 2nd choice)
-  // to avoid jitter between ambiguous classes
   if ((maxProb - secondProb) < 0.08 && maxProb < 0.85) {
     return { letter: 'nothing', confidence: maxProb };
   }
+  return { letter: currentWeights.classes[maxIdx], confidence: maxProb };
+}
 
-  return {
-    letter: currentWeights.classes[maxIdx],
-    confidence: maxProb
-  };
+/**
+ * PRIMARY classify() — async.
+ *
+ * Strategy:
+ *   1. Build the feature vector in JS (normalization is correct and fast).
+ *   2. POST it to Flask /predict_landmarks — uses sklearn's calibrated
+ *      predict_proba(), identical to run_native.py. This is why signs that
+ *      work in native Python also work in the browser.
+ *   3. If the server is unavailable, fall back to the JS MLP.
+ */
+async function classify(multiHandLandmarks, multiHandedness) {
+  if (!multiHandLandmarks || multiHandLandmarks.length === 0) {
+    return { letter: 'nothing', confidence: 0.0 };
+  }
+
+  // Determine if active model is dual-hand (156-D) or single-hand (78-D)
+  const isDualMode = currentWeights ? currentWeights.w0.length === 156 : false;
+
+  // Build feature vector (always in JS — fast, correct, no round-trip cost)
+  const featureVector = buildFeatureVector(multiHandLandmarks, isDualMode, multiHandedness);
+
+  // ── PATH A: Server-side inference (preferred) ────────────────────────────
+  if (serverAvailable) {
+    try {
+      const response = await fetch('/predict_landmarks', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mode: currentMode, landmarks: featureVector }),
+        signal: AbortSignal.timeout(300),   // 300ms hard timeout per frame
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        return {
+          letter:     data.letter     || 'nothing',
+          confidence: data.confidence || 0.0,
+          top3:       data.top3       || [],
+        };
+      }
+
+      // Non-200 response — server up but something is wrong
+      console.warn('[classify] Server error:', response.status);
+      return { letter: 'nothing', confidence: 0.0 };
+
+    } catch (err) {
+      // Timeout or network error → mark server down and re-probe
+      console.warn('[classify] Server unreachable, switching to JS fallback:', err.name);
+      serverAvailable = false;
+      showToast('⚠️ Server offline — using JS fallback', 3000);
+      setStatus('loading', 'JS fallback');
+      probeServer();   // async retry in background
+    }
+  }
+
+  // ── PATH B: JS MLP fallback ──────────────────────────────────────────────
+  if (!currentWeights) return { letter: 'nothing', confidence: 0.0 };
+  return classifyJS(featureVector);
 }
 
 // ── Process classification result ─────────────────────────────────────────────
@@ -489,7 +551,10 @@ function processResult(letter, confidence) {
 let camera = null;
 let hands  = null;
 
-function onResults(results) {
+// Prevent concurrent classify calls from piling up while a fetch is in flight
+let classifyInFlight = false;
+
+async function onResults(results) {
   dctx.save();
   dctx.clearRect(0, 0, displayCanvas.width, displayCanvas.height);
   dctx.drawImage(results.image, 0, 0, displayCanvas.width, displayCanvas.height);
@@ -503,8 +568,17 @@ function onResults(results) {
     handBadge.textContent = validHands.length > 1 ? '2 HANDS DETECTED' : 'HAND DETECTED';
     validHands.forEach(drawSkeleton);
 
-    const res = classify(validHands, results.multiHandedness);
-    processResult(res.letter, res.confidence);
+    // Skip this frame if the previous classify() hasn't returned yet
+    // (avoids a queue of stale requests building up on slow networks)
+    if (!classifyInFlight) {
+      classifyInFlight = true;
+      try {
+        const res = await classify(validHands, results.multiHandedness);
+        processResult(res.letter, res.confidence);
+      } finally {
+        classifyInFlight = false;
+      }
+    }
 
   } else {
     noHandOverlay.classList.add('visible');
@@ -783,9 +857,15 @@ window.addEventListener('DOMContentLoaded', async () => {
   // Wire controls FIRST: a camera failure must not leave every button dead.
   setupControls();
 
-  setStatus('loading', 'Loading Model…');
+  setStatus('loading', 'Loading…');
   try {
+    // 1. Probe for Flask backend (async, result used by classify())
+    probeServer();
+
+    // 2. Always load JS MLP weights for offline fallback
     await loadLandmarkModel();
+
+    // 3. Start camera
     await initMediaPipe();
   } catch (err) {
     showCameraError(err);
