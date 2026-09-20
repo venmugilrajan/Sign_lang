@@ -547,9 +547,7 @@ function processResult(letter, confidence) {
   }
 }
 
-// ── MediaPipe Camera Loop ─────────────────────────────────────────────────────
-let camera = null;
-let hands  = null;
+// (handLandmarker and animFrameId declared near initMediaPipe below)
 
 // Prevent concurrent classify calls from piling up while a fetch is in flight
 let classifyInFlight = false;
@@ -669,51 +667,98 @@ function showCameraError(err) {
   console.error('[SignLens] camera init failed:', err);
 }
 
+// ── MediaPipe Tasks Vision Camera Loop ───────────────────────────────────────
+let handLandmarker = null;
+let animFrameId    = null;
+
+/**
+ * Converts new Tasks Vision HandLandmarker results into the same shape
+ * the rest of app.js expects:
+ *   multiHandLandmarks: Array of [{x,y,z}, ...21]  (same as old API)
+ *   multiHandedness:    Array of {label: 'Right'|'Left'}  (same field name)
+ */
+function adaptResults(result) {
+  const multiHandLandmarks = result.landmarks || [];
+  const multiHandedness = (result.handedness || []).map(h => ({
+    // Tasks API: [{categoryName, score, ...}]  → wrap as {label}
+    label: (h[0] && h[0].categoryName) ? h[0].categoryName : 'Right'
+  }));
+  return { multiHandLandmarks, multiHandedness };
+}
+
 async function initMediaPipe() {
-  // Probe getUserMedia ourselves first. MediaPipe's camera_utils.js calls a
-  // native alert() when acquisition fails, which cannot be styled or caught --
-  // so fail here, before it ever runs.
+  // Probe getUserMedia first so we can show a styled error instead of a
+  // native alert() on failure.
   try {
     const probe = await navigator.mediaDevices.getUserMedia({
       video: { width: 640, height: 480 }
     });
-    probe.getTracks().forEach(t => t.stop());   // release for MediaPipe to reopen
+    probe.getTracks().forEach(t => t.stop());
   } catch (err) {
     showCameraError(err);
     return false;
   }
 
-  hands = new Hands({
-    locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
-  });
+  // Resolve WASM files from the same CDN version as the script
+  const vision = await window.MediaPipeTasksVision.FilesetResolver.forVisionTasks(
+    'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm'
+  );
 
-  hands.setOptions({
-    maxNumHands: 2,
-    modelComplexity: 1,
-    minDetectionConfidence: 0.70,
-    minTrackingConfidence: 0.70,
-  });
-
-  hands.onResults(onResults);
-
-  camera = new Camera(video, {
-    onFrame: async () => {
-      if (cameraActive) {
-        await hands.send({ image: video });
-      }
+  handLandmarker = await window.MediaPipeTasksVision.HandLandmarker.createFromOptions(vision, {
+    baseOptions: {
+      // Same hand_landmarker model as Python's hand_landmarker.task — identical coordinate space
+      modelAssetPath: 'https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task',
+      delegate: 'GPU',
     },
-    width: 640,
-    height: 480,
+    runningMode:   'VIDEO',
+    numHands:      2,
+    minHandDetectionConfidence: 0.50,
+    minHandPresenceConfidence:  0.50,
+    minTrackingConfidence:      0.50,
   });
 
+  // Start camera stream
+  let stream;
   try {
-    await camera.start();
+    stream = await navigator.mediaDevices.getUserMedia({
+      video: { width: 640, height: 480, facingMode: 'user' }
+    });
   } catch (err) {
     showCameraError(err);
     return false;
   }
+
+  video.srcObject = stream;
+  await new Promise(resolve => { video.onloadedmetadata = resolve; });
+  video.play();
+
   cameraActive = true;
   setStatus('ready', 'Connected');
+
+  // Detection loop using requestAnimationFrame for smooth 30fps
+  let lastVideoTime = -1;
+  function detect() {
+    if (!cameraActive) { animFrameId = null; return; }
+    animFrameId = requestAnimationFrame(detect);
+
+    if (video.currentTime === lastVideoTime) return;  // no new frame yet
+    lastVideoTime = video.currentTime;
+
+    displayCanvas.width  = video.videoWidth  || 640;
+    displayCanvas.height = video.videoHeight || 480;
+
+    // detectForVideo uses the video timestamp in ms for temporal smoothing
+    const result = handLandmarker.detectForVideo(video, performance.now());
+    const adapted = adaptResults(result);
+
+    // Synthesise a results object matching what onResults() already expects
+    onResults({
+      image:              video,
+      multiHandLandmarks: adapted.multiHandLandmarks,
+      multiHandedness:    adapted.multiHandedness,
+    });
+  }
+  detect();
   return true;
 }
 
@@ -745,14 +790,33 @@ function setupControls() {
 
   document.getElementById('btn-pause-detection').addEventListener('click', function() {
     paused = !paused;
-    this.textContent = paused ? '▶ Resume' : '⏸ Pause';
+    this.textContent = paused ? 'Resume' : 'Pause';
     this.classList.toggle('active-btn', paused);
   });
 
   document.getElementById('btn-camera-toggle').addEventListener('click', function() {
     cameraActive = !cameraActive;
-    this.textContent = cameraActive ? '📷 Stop Camera' : '📷 Start Camera';
-    this.classList.toggle('active-btn', cameraActive);
+    this.textContent = cameraActive ? 'Stop Camera' : 'Start Camera';
+    this.classList.toggle('active-btn', !cameraActive);
+    if (!cameraActive && animFrameId) {
+      cancelAnimationFrame(animFrameId);
+      animFrameId = null;
+    } else if (cameraActive && !animFrameId && handLandmarker) {
+      // restart loop
+      let lastVideoTime = -1;
+      function detect() {
+        if (!cameraActive) { animFrameId = null; return; }
+        animFrameId = requestAnimationFrame(detect);
+        if (video.currentTime === lastVideoTime) return;
+        lastVideoTime = video.currentTime;
+        displayCanvas.width  = video.videoWidth  || 640;
+        displayCanvas.height = video.videoHeight || 480;
+        const result = handLandmarker.detectForVideo(video, performance.now());
+        const adapted = adaptResults(result);
+        onResults({ image: video, multiHandLandmarks: adapted.multiHandLandmarks, multiHandedness: adapted.multiHandedness });
+      }
+      detect();
+    }
   });
 
   document.getElementById('btn-copy').addEventListener('click', () => {
