@@ -14,6 +14,7 @@ import cv2
 import time
 import pickle
 import threading
+import queue
 import numpy as np
 
 try:
@@ -51,25 +52,89 @@ HAND_CONNECTIONS = [
 ]
 
 
-# ─── Offline Text-to-Speech ────────────────────────────────────────────────────
-_tts_engine = pyttsx3.init() if pyttsx3 else None
-_tts_lock = threading.Lock()   # pyttsx3 run loops cannot overlap
+# ─── Offline Text-to-Speech (Non-blocking Thread-Safe Queue) ───────────────────
+_tts_queue = queue.Queue()
+
+def _tts_worker():
+    engine = None
+    if pyttsx3:
+        try:
+            engine = pyttsx3.init()
+        except Exception as e:
+            print(f"[TTS] Warning: pyttsx3 init failed: {e}")
+    while True:
+        word = _tts_queue.get()
+        if word is None:
+            break
+        if engine and word:
+            try:
+                engine.say(word)
+                engine.runAndWait()
+            except Exception as e:
+                print(f"[TTS] Speech error on '{word}': {e}")
+        _tts_queue.task_done()
+
+_tts_thread = threading.Thread(target=_tts_worker, daemon=True)
+_tts_thread.start()
 
 
 def speak(word: str):
-    """Speaks a word on a detached daemon thread so the HUD never blocks."""
-    if not _tts_engine or not word:
-        return
+    """Queues a word for offline speech on a dedicated non-blocking worker."""
+    if word:
+        _tts_queue.put(word)
 
-    def _run():
-        with _tts_lock:
-            try:
-                _tts_engine.say(word)
-                _tts_engine.runAndWait()
-            except Exception as e:
-                print(f"[TTS] Failed to speak '{word}': {e}")
 
-    threading.Thread(target=_run, daemon=True).start()
+class ThreadedCamera:
+    """High-performance non-blocking webcam reader supporting 60 FPS."""
+    def __init__(self, src=0, width=1280, height=720, target_fps=60):
+        self.cap = None
+        for backend, name in [(cv2.CAP_DSHOW, "DirectShow"), (cv2.CAP_MSMF, "Media Foundation"), (cv2.CAP_ANY, "Default")]:
+            temp = cv2.VideoCapture(src, backend)
+            if temp.isOpened():
+                temp.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*'MJPG'))
+                temp.set(cv2.CAP_PROP_FRAME_WIDTH, width)
+                temp.set(cv2.CAP_PROP_FRAME_HEIGHT, height)
+                temp.set(cv2.CAP_PROP_FPS, target_fps)
+                temp.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+                ret, test_frame = temp.read()
+                if ret and test_frame is not None:
+                    self.cap = temp
+                    print(f"[+] Camera initialized with {name} backend at {width}x{height} @ {target_fps}fps")
+                    break
+                temp.release()
+
+        if self.cap is None:
+            raise RuntimeError("Could not initialize webcam.")
+
+        self.ret, self.frame = self.cap.read()
+        self.running = True
+        self.lock = threading.Lock()
+        self.new_frame_event = threading.Event()
+        self.thread = threading.Thread(target=self._capture_loop, daemon=True)
+        self.thread.start()
+
+    def _capture_loop(self):
+        while self.running:
+            ret, frame = self.cap.read()
+            if ret and frame is not None:
+                with self.lock:
+                    self.ret = ret
+                    self.frame = frame
+                self.new_frame_event.set()
+            else:
+                time.sleep(0.001)
+
+    def read(self):
+        with self.lock:
+            if not self.ret or self.frame is None:
+                return False, None
+            return True, self.frame.copy()
+
+    def release(self):
+        self.running = False
+        self.new_frame_event.set()
+        self.thread.join(timeout=1.0)
+        self.cap.release()
 
 
 def calculate_angle_3d(a, b, c):
@@ -506,7 +571,7 @@ def draw_hud(frame, state, mode_name, fps):
 
 def main():
     print("=" * 70)
-    print("  SignLens — Real-Time Sign Language Translator & Diagnostic Studio")
+    print("  SignLens - Real-Time Sign Language Translator & Diagnostic Studio (60 FPS)")
     print("=" * 70)
     print("Controls:")
     print("  [1] Switch to ASL Mode")
@@ -518,55 +583,75 @@ def main():
     print("  [q] or [ESC] Quit")
     print("=" * 70)
 
+    cam = ThreadedCamera(src=0, width=1280, height=720, target_fps=60)
     translator = LandmarkSignTranslator()
 
-    # Initialize Camera
-    cap = None
-    for backend, name in [(cv2.CAP_DSHOW, "DirectShow"), (cv2.CAP_MSMF, "Media Foundation"), (cv2.CAP_ANY, "Default")]:
-        temp_cap = cv2.VideoCapture(0, backend)
-        if temp_cap.isOpened():
-            ret, test_frame = temp_cap.read()
-            if ret and test_frame is not None:
-                cap = temp_cap
-                print(f"[+] Camera initialized with {name} backend")
-                break
-            temp_cap.release()
+    latest_state = {
+        "hand_present": False,
+        "landmarks": [],
+        "handedness": "None",
+        "raw_pred": "NO HAND",
+        "raw_conf": 0.0,
+        "top3": [],
+        "hold_progress": 0.0,
+        "word_buffer": "",
+        "sentence": "",
+        "suggested_word": "",
+        "suggestions": [],
+        "released": True,
+        "debug_mode": True
+    }
+    state_lock = threading.Lock()
+    running = True
 
-    if cap is None:
-        print("[ERROR] Could not initialize webcam.")
-        return
+    def inference_worker():
+        nonlocal latest_state
+        while running:
+            # Wait for fresh frame from camera
+            cam.new_frame_event.wait(timeout=0.05)
+            cam.new_frame_event.clear()
+            ret, frame = cam.read()
+            if not ret or frame is None:
+                continue
 
-    cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
-    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
+            h, w = frame.shape[:2]
+            st = translator.process_frame(frame, w, h)
+            with state_lock:
+                latest_state = st
 
-    fps = 30.0
+    infer_thread = threading.Thread(target=inference_worker, daemon=True)
+    infer_thread.start()
+
+    window_title = "SignLens - Real-Time Sign Language Translator (60 FPS)"
+    cv2.namedWindow(window_title, cv2.WINDOW_NORMAL)
+
+    fps = 60.0
     prev_time = time.time()
 
-    while True:
-        ret, raw_frame = cap.read()
+    while running:
+        ret, raw_frame = cam.read()
         if not ret or raw_frame is None:
+            time.sleep(0.001)
             continue
 
-        h, w = raw_frame.shape[:2]
-
-        # FPS calculation
         curr_time = time.time()
-        fps = 0.9 * fps + 0.1 * (1.0 / max(1e-5, (curr_time - prev_time)))
+        fps = 0.92 * fps + 0.08 * (1.0 / max(1e-5, (curr_time - prev_time)))
         prev_time = curr_time
 
-        # 1. Process landmarks on RAW UNMIRRORED frame with Left/Right normalization
-        state = translator.process_frame(raw_frame, w, h)
+        with state_lock:
+            state = dict(latest_state)
 
-        # 2. Mirror display frame for natural selfie view
+        # Mirror display frame for natural selfie view
         display_frame = cv2.flip(raw_frame, 1)
 
-        # 3. Draw Overlay
+        # Draw Overlay
         draw_hud(display_frame, state, translator.current_mode, fps)
 
-        cv2.imshow("SignLens — Real-Time Sign Language Translator", display_frame)
+        cv2.imshow(window_title, display_frame)
 
         key = cv2.waitKey(1) & 0xFF
         if key == ord('q') or key == 27:
+            running = False
             break
         elif key == ord('1'):
             translator.switch_mode("asl")
@@ -582,7 +667,8 @@ def main():
         elif key == ord('c'):
             translator.clear_all()
 
-    cap.release()
+    running = False
+    cam.release()
     cv2.destroyAllWindows()
 
 
