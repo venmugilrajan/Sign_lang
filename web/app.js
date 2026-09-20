@@ -682,11 +682,38 @@ let animFrameId    = null;
  *   multiHandedness:    Array of {label: 'Right'|'Left'}  (same field name)
  */
 function adaptResults(result) {
-  const multiHandLandmarks = result.landmarks || [];
-  const multiHandedness = (result.handedness || []).map(h => ({
-    // Tasks API: [{categoryName, score, ...}]  → wrap as {label}
-    label: (h[0] && h[0].categoryName) ? h[0].categoryName : 'Right'
-  }));
+  const rawLandmarks = result.landmarks || [];
+  const rawHandedness = result.handedness || [];
+  
+  const multiHandLandmarks = [];
+  const multiHandedness = [];
+
+  for (let i = 0; i < rawLandmarks.length; i++) {
+    const lms = rawLandmarks[i];
+    if (!lms || lms.length < 21) continue;
+
+    // Geometric validation to reject facial false positives (e.g. nose / glasses bridge)
+    const palmLen = Math.hypot(lms[9].x - lms[0].x, lms[9].y - lms[0].y);
+    let minX = 1, maxX = 0, minY = 1, maxY = 0;
+    for (let j = 0; j < lms.length; j++) {
+      const p = lms[j];
+      if (p.x < minX) minX = p.x;
+      if (p.x > maxX) maxX = p.x;
+      if (p.y < minY) minY = p.y;
+      if (p.y > maxY) maxY = p.y;
+    }
+    const bboxDiag = Math.hypot(maxX - minX, maxY - minY);
+    if (palmLen < 0.04 || bboxDiag < 0.08) {
+      continue;
+    }
+
+    multiHandLandmarks.push(lms);
+    const h = rawHandedness[i];
+    multiHandedness.push({
+      label: (h && h[0] && h[0].categoryName) ? h[0].categoryName : 'Right'
+    });
+  }
+
   return { multiHandLandmarks, multiHandedness };
 }
 

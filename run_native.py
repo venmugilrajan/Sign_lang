@@ -12,6 +12,7 @@ Features:
 import os
 import cv2
 import time
+import math
 import pickle
 import threading
 import queue
@@ -35,8 +36,8 @@ ASL_MODEL_PATH = os.path.join(BASE_DIR, "models", "asl_landmark_model.pkl")
 ISL_MODEL_PATH = os.path.join(BASE_DIR, "models", "isl_landmark_model.pkl")
 
 # Live Thresholds
-MIN_DETECTION_CONF = 0.25   # Lowered detection confidence to reliably detect 2 hands simultaneously
-CONF_THRESHOLD = 0.40       # Letter acceptance threshold
+MIN_DETECTION_CONF = 0.50   # Standard confidence threshold (prevents false hand detection on nose/face)
+CONF_THRESHOLD = 0.50       # Letter acceptance threshold (filters low-confidence prediction noise)
 STABLE_FRAMES_NEEDED = 5    # Consecutive frames required to confirm letter
 RELEASE_FRAMES_NEEDED = 2   # Frames to confirm hand release for double letters
 NO_HAND_WORD_TIMEOUT = 2.0  # Seconds to auto-commit word on hand drop
@@ -304,6 +305,20 @@ class LandmarkSignTranslator:
         hands_data = []
 
         for idx, landmarks in enumerate(results.hand_landmarks):
+            # Geometric validation to reject false positives (e.g. nose, spectacles bridge, nostrils)
+            # 1. Palm length: distance between wrist (0) and middle finger MCP base (9)
+            palm_len = math.hypot(landmarks[9].x - landmarks[0].x, landmarks[9].y - landmarks[0].y)
+
+            # 2. Hand bounding box diagonal in normalized coordinates
+            xs = [lm.x for lm in landmarks]
+            ys = [lm.y for lm in landmarks]
+            bbox_diag = math.hypot(max(xs) - min(xs), max(ys) - min(ys))
+
+            # A real hand in front of the camera has palm_len >= 0.04 and bbox_diag >= 0.08
+            # Micro-clusters on the nose or facial features fail this test
+            if palm_len < 0.04 or bbox_diag < 0.08:
+                continue
+
             h_name = "Right"
             score = 1.0
             if results.handedness and idx < len(results.handedness):
@@ -319,6 +334,9 @@ class LandmarkSignTranslator:
             single_vec = self._extract_single_hand_vector(landmarks, w, h, h_name, apply_handedness_mirror=(not is_dual_mode))
             wrist_x = landmarks[0].x
             hands_data.append((wrist_x, single_vec))
+
+        if not hands_data:
+            return None, [], "None"
 
         if is_dual_mode:
             # Sort detected hands strictly by horizontal position (Left to Right)
