@@ -870,12 +870,103 @@ function setupControls() {
     }
   });
 
-  document.getElementById('btn-speak').addEventListener('click', () => {
-    if (sentenceWords.length && 'speechSynthesis' in window) {
-      const u = new SpeechSynthesisUtterance(sentenceWords.join(' '));
-      speechSynthesis.speak(u);
+  // Global reference to prevent Chrome garbage-collection bug on SpeechSynthesisUtterance
+  window._activeUtterance = null;
+
+  function fallbackServerSpeak(text, btn) {
+    fetch('/speak', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text })
+    }).then(res => res.json())
+      .then(data => {
+        console.log('[SignLens] Server TTS spoke:', data);
+      })
+      .catch(err => console.error('[SignLens] Server TTS failed:', err))
+      .finally(() => {
+        if (btn) {
+          btn.classList.remove('active');
+          btn.textContent = 'Speak';
+        }
+      });
+  }
+
+  function speakSentence() {
+    const text = (sentenceWords.length
+      ? sentenceWords.join(' ')
+      : (sentenceDisplay.innerText || '').replace(/Your sentence will appear here[…\.]*/i, '')
+    ).trim();
+
+    if (!text) {
+      showToast('⚠️ No sentence to speak yet');
+      return;
     }
-  });
+
+    const btnSpeak = document.getElementById('btn-speak');
+    if (btnSpeak) {
+      btnSpeak.classList.add('active');
+      btnSpeak.textContent = 'Speaking…';
+    }
+    showToast(`🔊 Speaking: "${text}"`);
+
+    if ('speechSynthesis' in window) {
+      try {
+        window.speechSynthesis.cancel(); // Reset stuck Chromium speech queue
+
+        const u = new SpeechSynthesisUtterance(text);
+        window._activeUtterance = u; // Keep reference to prevent V8 GC drop
+
+        u.lang = 'en-US';
+        u.rate = 0.95;
+        u.pitch = 1.0;
+        u.volume = 1.0;
+
+        const voices = window.speechSynthesis.getVoices();
+        if (voices && voices.length > 0) {
+          const enVoice = voices.find(v => v.lang.startsWith('en') && !v.localService) ||
+                          voices.find(v => v.lang.startsWith('en')) ||
+                          voices[0];
+          if (enVoice) u.voice = enVoice;
+        }
+
+        u.onend = () => {
+          window._activeUtterance = null;
+          if (btnSpeak) {
+            btnSpeak.classList.remove('active');
+            btnSpeak.textContent = 'Speak';
+          }
+        };
+
+        u.onerror = (e) => {
+          console.warn('[SignLens] Browser speech error, falling back to server TTS:', e);
+          window._activeUtterance = null;
+          fallbackServerSpeak(text, btnSpeak);
+        };
+
+        window.speechSynthesis.speak(u);
+
+        if (window.speechSynthesis.paused) {
+          window.speechSynthesis.resume();
+        }
+
+        // Safety timeout to reset button state after utterance
+        setTimeout(() => {
+          if (btnSpeak && btnSpeak.textContent === 'Speaking…') {
+            btnSpeak.classList.remove('active');
+            btnSpeak.textContent = 'Speak';
+          }
+        }, Math.max(3000, text.split(' ').length * 1200));
+
+      } catch (err) {
+        console.warn('[SignLens] SpeechSynthesis exception:', err);
+        fallbackServerSpeak(text, btnSpeak);
+      }
+    } else {
+      fallbackServerSpeak(text, btnSpeak);
+    }
+  }
+
+  document.getElementById('btn-speak').addEventListener('click', speakSentence);
 
   // Mode buttons
   const btnAsl = document.getElementById('btn-asl');

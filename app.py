@@ -15,9 +15,45 @@ from PIL import Image, ImageEnhance
 from flask import Flask, request, jsonify, send_from_directory
 from flask_cors import CORS
 from torchvision import transforms
+import threading
+import queue
 from spellchecker import SpellChecker
 
+try:
+    import pyttsx3
+except ImportError:
+    pyttsx3 = None
+
 from model import load_model, NORMALIZE_MEAN, NORMALIZE_STD, INPUT_SIZE
+
+# ─── Offline Text-to-Speech (Non-blocking Queue) ────────────────────────────────
+_server_tts_queue = queue.Queue()
+
+def _server_tts_worker():
+    engine = None
+    if pyttsx3:
+        try:
+            engine = pyttsx3.init()
+        except Exception as e:
+            print(f"[TTS] Warning: pyttsx3 init failed: {e}")
+    while True:
+        text = _server_tts_queue.get()
+        if text is None:
+            break
+        if engine and text:
+            try:
+                engine.say(text)
+                engine.runAndWait()
+            except Exception as e:
+                print(f"[TTS] Speech error on '{text}': {e}")
+        _server_tts_queue.task_done()
+
+_server_tts_thread = threading.Thread(target=_server_tts_worker, daemon=True)
+_server_tts_thread.start()
+
+def server_speak(text: str):
+    if text:
+        _server_tts_queue.put(text)
 
 # ─── Configuration ─────────────────────────────────────────────────────────────
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -227,6 +263,16 @@ def spellcheck():
     })
 
 
+@app.route("/speak", methods=["POST"])
+def speak_route():
+    data = request.get_json(silent=True) or {}
+    text = data.get("text", "").strip()
+    if not text:
+        return jsonify({"status": "error", "message": "No text provided"}), 400
+    server_speak(text)
+    return jsonify({"status": "ok", "spoken": text})
+
+
 # ─── Run ───────────────────────────────────────────────────────────────────────
 if __name__ == "__main__":
     print("\n" + "=" * 60)
@@ -234,5 +280,5 @@ if __name__ == "__main__":
     print("=" * 60)
     load_all_models()
     print(f"\n[->] Server starting on http://localhost:5000")
-    print(f"[->] Endpoints: GET /health | GET /classes | POST /predict_landmarks | POST /predict | POST /spellcheck\n")
+    print(f"[->] Endpoints: GET /health | GET /classes | POST /predict_landmarks | POST /predict | POST /spellcheck | POST /speak\n")
     app.run(host="0.0.0.0", port=5000, debug=False)
