@@ -1119,13 +1119,61 @@ const NEUTRAL_REST_POSE = Array(21).fill(0).map((_, i) => {
   return [xOffset, yOffset, 0];
 });
 
+function clone21(pts) {
+  if (!pts || !Array.isArray(pts)) return null;
+  return pts.map(pt => [pt[0], pt[1], pt[2] || 0]);
+}
+
+function normalizePose(raw) {
+  if (!raw) {
+    return {
+      twoHanded: false,
+      left: null,
+      right: clone21(NEUTRAL_REST_POSE),
+      wristL: [0.0, 0.0],
+      wristR: [0.0, 0.0],
+      desc: ''
+    };
+  }
+  if (Array.isArray(raw)) {
+    return {
+      twoHanded: false,
+      left: null,
+      right: clone21(raw),
+      wristL: [0.0, 0.0],
+      wristR: [0.0, 0.0],
+      desc: ''
+    };
+  }
+  return {
+    twoHanded: !!raw.twoHanded,
+    left: raw.left ? clone21(raw.left) : null,
+    right: raw.right ? clone21(raw.right) : clone21(NEUTRAL_REST_POSE),
+    wristL: raw.wristL ? [raw.wristL[0], raw.wristL[1]] : [0.0, 0.0],
+    wristR: raw.wristR ? [raw.wristR[0], raw.wristR[1]] : [0.0, 0.0],
+    desc: raw.desc || ''
+  };
+}
+
+function clonePose(pose) {
+  const norm = normalizePose(pose);
+  return {
+    twoHanded: norm.twoHanded,
+    left: clone21(norm.left),
+    right: clone21(norm.right),
+    wristL: [...norm.wristL],
+    wristR: [...norm.wristR],
+    desc: norm.desc
+  };
+}
+
 function initPracticeStudio() {
   const canvas = document.getElementById('avatar-canvas');
   if (!canvas) return;
   const ctx = canvas.getContext('2d');
 
   // 1. Fetch templates
-  fetch('/sign_templates.json')
+  fetch('/sign_templates.json?v=' + Date.now(), { cache: 'no-store' })
     .then(res => {
       if (!res.ok) throw new Error('HTTP ' + res.status);
       return res.json();
@@ -1157,6 +1205,7 @@ function initPracticeStudio() {
 
   const hudChar = document.getElementById('hud-letter-char');
   const hudSub = document.getElementById('hud-letter-sub');
+  const hudCue = document.getElementById('hud-letter-cue');
   const hudStatus = document.getElementById('avatar-hud-status');
   const avatarStatusText = document.getElementById('avatar-status-text');
 
@@ -1182,19 +1231,13 @@ function initPracticeStudio() {
   window.addEventListener('resize', resizeCanvas);
   setTimeout(resizeCanvas, 100);
 
-  // Helper to clone a pose
-  function clonePose(pose) {
-    if (!pose) return JSON.parse(JSON.stringify(NEUTRAL_REST_POSE));
-    return pose.map(pt => [pt[0], pt[1], pt[2]]);
-  }
-
   // Get template for a character
   function getTemplatePose(char) {
     const dict = practiceTemplates[practiceDialect] || practiceTemplates.asl || {};
     const upper = String(char).toUpperCase();
-    if (dict[upper]) return dict[upper];
-    if (dict['REST']) return dict['REST'];
-    return NEUTRAL_REST_POSE;
+    if (dict[upper]) return normalizePose(dict[upper]);
+    if (dict['REST']) return normalizePose(dict['REST']);
+    return normalizePose(null);
   }
 
   // Dialect switch inside Practice
@@ -1419,6 +1462,7 @@ function initPracticeStudio() {
     if (practiceSequence.length === 0) {
       if (hudChar) hudChar.textContent = '—';
       if (hudSub) hudSub.textContent = 'Waiting for input';
+      if (hudCue) { hudCue.style.display = 'none'; hudCue.textContent = ''; }
       if (avatarStatusText) avatarStatusText.textContent = 'Ready';
       if (hudStatus) hudStatus.classList.remove('playing');
       return;
@@ -1428,13 +1472,30 @@ function initPracticeStudio() {
     if (hudChar) {
       hudChar.textContent = (currChar === ' ' ? '␣' : currChar);
     }
+
+    const currPose = getTemplatePose(currChar === ' ' ? 'REST' : currChar);
+    const is2H = currPose.twoHanded;
+    const desc = currPose.desc;
+
     if (hudSub) {
       if (currChar === ' ') {
         hudSub.textContent = `Word Boundary Pause (${practiceCurrentIndex + 1}/${practiceSequence.length})`;
       } else {
-        hudSub.textContent = `${practiceDialect.toUpperCase()} Sign • Step ${practiceCurrentIndex + 1} of ${practiceSequence.length}`;
+        const handTag = (practiceDialect === 'isl') ? (is2H ? ' • Dual Hand (Two-Handed)' : ' • Single Hand') : ' • Single Hand';
+        hudSub.textContent = `${practiceDialect.toUpperCase()} Sign • Step ${practiceCurrentIndex + 1} of ${practiceSequence.length}${handTag}`;
       }
     }
+
+    if (hudCue) {
+      if (desc && currChar !== ' ') {
+        hudCue.style.display = 'inline-flex';
+        hudCue.textContent = `${is2H ? '👐 Two-Handed: ' : '✋ '}${desc}`;
+      } else {
+        hudCue.style.display = 'none';
+        hudCue.textContent = '';
+      }
+    }
+
     if (avatarStatusText) {
       avatarStatusText.textContent = practiceIsPlaying ? 'Demonstrating…' : 'Paused';
     }
@@ -1546,11 +1607,44 @@ function initPracticeStudio() {
         practiceCurrentPose = clonePose(practiceFromPose);
       }
 
+      // Interpolate right hand
+      const fromR = practiceFromPose.right || NEUTRAL_REST_POSE;
+      const toR = practiceToPose.right || NEUTRAL_REST_POSE;
+      if (!practiceCurrentPose.right) practiceCurrentPose.right = clone21(fromR);
       for (let i = 0; i < 21; i++) {
-        practiceCurrentPose[i][0] = lerp(practiceFromPose[i][0], practiceToPose[i][0], t);
-        practiceCurrentPose[i][1] = lerp(practiceFromPose[i][1], practiceToPose[i][1], t);
-        practiceCurrentPose[i][2] = lerp(practiceFromPose[i][2], practiceToPose[i][2], t);
+        practiceCurrentPose.right[i][0] = lerp(fromR[i][0], toR[i][0], t);
+        practiceCurrentPose.right[i][1] = lerp(fromR[i][1], toR[i][1], t);
+        practiceCurrentPose.right[i][2] = lerp(fromR[i][2], toR[i][2], t);
       }
+
+      // Interpolate left hand
+      const fromL = practiceFromPose.left;
+      const toL = practiceToPose.left;
+      if (fromL || toL) {
+        const effFromL = fromL || NEUTRAL_REST_POSE;
+        const effToL = toL || NEUTRAL_REST_POSE;
+        if (!practiceCurrentPose.left) practiceCurrentPose.left = clone21(effFromL);
+        for (let i = 0; i < 21; i++) {
+          practiceCurrentPose.left[i][0] = lerp(effFromL[i][0], effToL[i][0], t);
+          practiceCurrentPose.left[i][1] = lerp(effFromL[i][1], effToL[i][1], t);
+          practiceCurrentPose.left[i][2] = lerp(effFromL[i][2], effToL[i][2], t);
+        }
+        practiceCurrentPose.twoHanded = (t > 0.5) ? practiceToPose.twoHanded : practiceFromPose.twoHanded;
+      } else {
+        practiceCurrentPose.left = null;
+        practiceCurrentPose.twoHanded = false;
+      }
+
+      // Interpolate wrist offsets
+      practiceCurrentPose.wristL = [
+        lerp(practiceFromPose.wristL ? practiceFromPose.wristL[0] : 0, practiceToPose.wristL ? practiceToPose.wristL[0] : 0, t),
+        lerp(practiceFromPose.wristL ? practiceFromPose.wristL[1] : 0, practiceToPose.wristL ? practiceToPose.wristL[1] : 0, t)
+      ];
+      practiceCurrentPose.wristR = [
+        lerp(practiceFromPose.wristR ? practiceFromPose.wristR[0] : 0, practiceToPose.wristR ? practiceToPose.wristR[0] : 0, t),
+        lerp(practiceFromPose.wristR ? practiceFromPose.wristR[1] : 0, practiceToPose.wristR ? practiceToPose.wristR[1] : 0, t)
+      ];
+      practiceCurrentPose.desc = practiceToPose.desc;
 
       if (practiceIsPlaying && elapsed >= totalStepMs) {
         if (practiceCurrentIndex < practiceSequence.length - 1) {
@@ -1564,6 +1658,89 @@ function initPracticeStudio() {
     }
 
     drawAvatar();
+  }
+
+  // Draw 21-landmark hand skeleton with 5 distinct finger colors, palm metacarpals, and pearl beads
+  function drawHandSkeleton(ctx, pose21, wristX, wristY, dpr, scale, isLeft) {
+    if (!pose21 || pose21.length !== 21) return;
+
+    // Project landmarks to screen coordinates
+    const pts = pose21.map(pt => {
+      const lx = pt[0];
+      const ly = pt[1];
+      const lz = pt[2] || 0;
+      const depth = 1.0 / (1.0 - lz * 0.18);
+      return [
+        wristX + lx * scale * depth,
+        wristY + ly * scale * depth,
+        lz
+      ];
+    });
+
+    // Palm Metacarpal Structure (cool titanium slate connecting wrist to the 4 knuckles)
+    const palmCol = 'rgba(145, 160, 175, 0.85)';
+    ctx.strokeStyle = palmCol;
+    ctx.lineWidth = 3.5 * dpr;
+
+    // Metacarpal rays: wrist to MCPs (5, 9, 13, 17)
+    [5, 9, 13, 17].forEach(mcp => {
+      ctx.beginPath();
+      ctx.moveTo(wristX, wristY);
+      ctx.lineTo(pts[mcp][0], pts[mcp][1]);
+      ctx.stroke();
+    });
+
+    // Knuckle transverse arch: connecting MCP 5 -> 9 -> 13 -> 17
+    ctx.lineWidth = 4.5 * dpr;
+    ctx.beginPath();
+    ctx.moveTo(pts[5][0], pts[5][1]);
+    ctx.lineTo(pts[9][0], pts[9][1]);
+    ctx.lineTo(pts[13][0], pts[13][1]);
+    ctx.lineTo(pts[17][0], pts[17][1]);
+    ctx.stroke();
+
+    // Finger Segments with exact reference colors:
+    // Thumb: Coral / Red-Pink (wrist 0 -> 1 -> 2 -> 3 -> 4)
+    // Index: Deep Electric Blue (5 -> 6 -> 7 -> 8)
+    // Middle: Bright Emerald Green (9 -> 10 -> 11 -> 12)
+    // Ring: Vibrant Cyan (13 -> 14 -> 15 -> 16)
+    // Pinky: Warm Orange (17 -> 18 -> 19 -> 20)
+    const fingerGroups = [
+      { indices: [0, 1, 2, 3, 4],    color: '#ff4d4d', width: 6.0 * dpr }, // Thumb
+      { indices: [5, 6, 7, 8],        color: '#2979ff', width: 6.0 * dpr }, // Index
+      { indices: [9, 10, 11, 12],     color: '#00e676', width: 6.0 * dpr }, // Middle
+      { indices: [13, 14, 15, 16],    color: '#00e5ff', width: 6.0 * dpr }, // Ring
+      { indices: [17, 18, 19, 20],    color: '#ff9800', width: 6.0 * dpr }, // Pinky
+    ];
+
+    fingerGroups.forEach(group => {
+      ctx.strokeStyle = group.color;
+      ctx.lineWidth = group.width;
+      for (let k = 0; k < group.indices.length - 1; k++) {
+        const i1 = group.indices[k];
+        const i2 = group.indices[k + 1];
+        ctx.beginPath();
+        ctx.moveTo(pts[i1][0], pts[i1][1]);
+        ctx.lineTo(pts[i2][0], pts[i2][1]);
+        ctx.stroke();
+      }
+    });
+
+    // Joint caps: Clean pearl white dots
+    ctx.fillStyle = '#ffffff';
+    pts.forEach((pt, idx) => {
+      if (idx === 0) return; // Skip wrist, drawn specially below
+      const radius = (idx % 4 === 0) ? 2.5 * dpr : 2.0 * dpr;
+      ctx.beginPath();
+      ctx.arc(pt[0], pt[1], radius, 0, Math.PI * 2);
+      ctx.fill();
+    });
+
+    // Wrist Joint: Clean pearl white bead
+    ctx.fillStyle = '#ffffff';
+    ctx.beginPath();
+    ctx.arc(wristX, wristY, 5 * dpr, 0, Math.PI * 2);
+    ctx.fill();
   }
 
   // Draw Avatar Canvas
@@ -1646,108 +1823,72 @@ function initPracticeStudio() {
     ctx.lineTo(w * 0.65, h * 0.98);
     ctx.stroke();
 
-    // Signing Right Arm (viewer left): Shoulder -> Elbow -> Wrist
-    const elbowL_X = w * 0.24;
-    const elbowL_Y = h * 0.84;
-    const wristX = w * 0.31;
-    const wristY = h * 0.65;
+    // Determine dual-hand vs single-hand posture
+    const is2H = practiceCurrentPose && practiceCurrentPose.twoHanded && practiceCurrentPose.left;
+    const handScale = Math.min(w * 0.20, h * 0.20);
 
-    ctx.beginPath();
-    ctx.moveTo(leftShoulderX, shoulderY);
-    ctx.lineTo(elbowL_X, elbowL_Y);
-    ctx.lineTo(wristX, wristY);
-    ctx.stroke();
+    if (is2H) {
+      // TWO-HANDED MODE: Both arms raised into signing space
+      const offLx = (practiceCurrentPose.wristL ? practiceCurrentPose.wristL[0] : 0) * handScale;
+      const offLy = (practiceCurrentPose.wristL ? practiceCurrentPose.wristL[1] : 0) * handScale;
+      const offRx = (practiceCurrentPose.wristR ? practiceCurrentPose.wristR[0] : 0) * handScale;
+      const offRy = (practiceCurrentPose.wristR ? practiceCurrentPose.wristR[1] : 0) * handScale;
 
-    // Resting Left Arm (viewer right): Shoulder -> Elbow -> Forearm
-    const elbowR_X = w * 0.76;
-    const elbowR_Y = h * 0.82;
-    ctx.beginPath();
-    ctx.moveTo(rightShoulderX, shoulderY);
-    ctx.lineTo(elbowR_X, elbowR_Y);
-    ctx.lineTo(w * 0.68, h * 0.98);
-    ctx.stroke();
+      const wristL_X = w * 0.37 + offLx;
+      const wristL_Y = h * 0.65 + offLy;
+      const wristR_X = w * 0.63 + offRx;
+      const wristR_Y = h * 0.65 + offRy;
 
-    // 3. Hand Skeleton (Vibrant 5-Finger Colors & Palm Metacarpals matching RyloTranslate)
-    if (practiceCurrentPose && practiceCurrentPose.length === 21) {
-      const scale = Math.min(w * 0.22, h * 0.22);
+      const elbowL_X = leftShoulderX - w * 0.07;
+      const elbowL_Y = (shoulderY + wristL_Y) / 2 + h * 0.08;
+      const elbowR_X = rightShoulderX + w * 0.07;
+      const elbowR_Y = (shoulderY + wristR_Y) / 2 + h * 0.08;
 
-      // Project landmarks to screen coordinates
-      const pts = practiceCurrentPose.map(pt => {
-        const lx = pt[0];
-        const ly = pt[1];
-        const lz = pt[2] || 0;
-        const depth = 1.0 / (1.0 - lz * 0.18);
-        return [
-          wristX + lx * scale * depth,
-          wristY + ly * scale * depth,
-          lz
-        ];
-      });
-
-      // Palm Metacarpal Structure (cool titanium slate connecting wrist to the 4 knuckles)
-      const palmCol = 'rgba(145, 160, 175, 0.85)';
-      ctx.strokeStyle = palmCol;
-      ctx.lineWidth = 3.5 * dpr;
-
-      // Metacarpal rays: wrist to MCPs (5, 9, 13, 17)
-      [5, 9, 13, 17].forEach(mcp => {
-        ctx.beginPath();
-        ctx.moveTo(wristX, wristY);
-        ctx.lineTo(pts[mcp][0], pts[mcp][1]);
-        ctx.stroke();
-      });
-
-      // Knuckle transverse arch: connecting MCP 5 -> 9 -> 13 -> 17
-      ctx.lineWidth = 4.5 * dpr;
+      // Left Arm (viewer-left): Shoulder -> Elbow -> Wrist
       ctx.beginPath();
-      ctx.moveTo(pts[5][0], pts[5][1]);
-      ctx.lineTo(pts[9][0], pts[9][1]);
-      ctx.lineTo(pts[13][0], pts[13][1]);
-      ctx.lineTo(pts[17][0], pts[17][1]);
+      ctx.moveTo(leftShoulderX, shoulderY);
+      ctx.lineTo(elbowL_X, elbowL_Y);
+      ctx.lineTo(wristL_X, wristL_Y);
       ctx.stroke();
 
-      // Finger Segments with exact reference colors:
-      // Thumb: Coral / Red-Pink (wrist 0 -> 1 -> 2 -> 3 -> 4)
-      // Index: Deep Electric Blue (5 -> 6 -> 7 -> 8)
-      // Middle: Bright Emerald Green (9 -> 10 -> 11 -> 12)
-      // Ring: Vibrant Cyan (13 -> 14 -> 15 -> 16)
-      // Pinky: Warm Orange (17 -> 18 -> 19 -> 20)
-      const fingerGroups = [
-        { indices: [0, 1, 2, 3, 4],    color: '#ff4d4d', width: 6.5 * dpr }, // Thumb
-        { indices: [5, 6, 7, 8],        color: '#2979ff', width: 6.5 * dpr }, // Index
-        { indices: [9, 10, 11, 12],     color: '#00e676', width: 6.5 * dpr }, // Middle
-        { indices: [13, 14, 15, 16],    color: '#00e5ff', width: 6.5 * dpr }, // Ring
-        { indices: [17, 18, 19, 20],    color: '#ff9800', width: 6.5 * dpr }, // Pinky
-      ];
-
-      fingerGroups.forEach(group => {
-        ctx.strokeStyle = group.color;
-        ctx.lineWidth = group.width;
-        for (let k = 0; k < group.indices.length - 1; k++) {
-          const i1 = group.indices[k];
-          const i2 = group.indices[k + 1];
-          ctx.beginPath();
-          ctx.moveTo(pts[i1][0], pts[i1][1]);
-          ctx.lineTo(pts[i2][0], pts[i2][1]);
-          ctx.stroke();
-        }
-      });
-
-      // Small clean joint caps
-      ctx.fillStyle = '#ffffff';
-      pts.forEach((pt, idx) => {
-        if (idx === 0) return; // Skip wrist, drawn specially below
-        const radius = (idx % 4 === 0) ? 2.5 * dpr : 2.0 * dpr;
-        ctx.beginPath();
-        ctx.arc(pt[0], pt[1], radius, 0, Math.PI * 2);
-        ctx.fill();
-      });
-
-      // Wrist Joint: Clean pearl white bead
-      ctx.fillStyle = '#ffffff';
+      // Right Arm (viewer-right): Shoulder -> Elbow -> Wrist
       ctx.beginPath();
-      ctx.arc(wristX, wristY, 5 * dpr, 0, Math.PI * 2);
-      ctx.fill();
+      ctx.moveTo(rightShoulderX, shoulderY);
+      ctx.lineTo(elbowR_X, elbowR_Y);
+      ctx.lineTo(wristR_X, wristR_Y);
+      ctx.stroke();
+
+      // Render both hand skeletons
+      drawHandSkeleton(ctx, practiceCurrentPose.left, wristL_X, wristL_Y, dpr, handScale, true);
+      drawHandSkeleton(ctx, practiceCurrentPose.right, wristR_X, wristR_Y, dpr, handScale, false);
+    } else {
+      // SINGLE-HANDED MODE: Dominant signing arm active, other arm resting naturally
+      const wristX = w * 0.34;
+      const wristY = h * 0.65;
+      const elbowL_X = w * 0.24;
+      const elbowL_Y = h * 0.84;
+
+      // Signing Arm (viewer-left): Shoulder -> Elbow -> Wrist
+      ctx.beginPath();
+      ctx.moveTo(leftShoulderX, shoulderY);
+      ctx.lineTo(elbowL_X, elbowL_Y);
+      ctx.lineTo(wristX, wristY);
+      ctx.stroke();
+
+      // Resting Arm (viewer-right): Shoulder -> Elbow -> Forearm down
+      const elbowR_X = w * 0.76;
+      const elbowR_Y = h * 0.82;
+      ctx.beginPath();
+      ctx.moveTo(rightShoulderX, shoulderY);
+      ctx.lineTo(elbowR_X, elbowR_Y);
+      ctx.lineTo(w * 0.68, h * 0.98);
+      ctx.stroke();
+
+      // Render single hand skeleton
+      const singlePose = practiceCurrentPose ? (practiceCurrentPose.right || practiceCurrentPose.left) : null;
+      if (singlePose) {
+        drawHandSkeleton(ctx, singlePose, wristX, wristY, dpr, handScale, false);
+      }
     }
 
     ctx.restore();

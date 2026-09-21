@@ -1101,6 +1101,23 @@ kbd {
   margin-top: 4px;
 }
 
+.hud-letter-cue {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 6px;
+  padding: 4px 10px;
+  border-radius: var(--r-ctrl);
+  background: color-mix(in oklab, var(--accent) 14%, transparent);
+  border: 1px solid color-mix(in oklab, var(--accent) 30%, transparent);
+  font-size: 0.76rem;
+  font-weight: 500;
+  color: var(--accent);
+  max-width: 340px;
+  line-height: 1.35;
+  backdrop-filter: blur(8px);
+}
+
 .avatar-hud-status {
   position: absolute;
   top: 18px;
