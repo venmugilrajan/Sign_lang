@@ -32,7 +32,13 @@ DEFAULT_SIGN_VOCABULARY = [
     "EAT", "DRINK", "SLEEP", "STOP", "GO", "COME", "WAIT", "WANT", "NEED",
     "TIME", "TODAY", "TOMORROW", "YESTERDAY", "NOW", "SOON", "LATER", "DAY", "NIGHT", "MORNING",
     "BABY", "MOTHER", "FATHER", "BROTHER", "SISTER", "FAMILY", "BOY", "GIRL", "CHILD", "SON", "DAUGHTER",
-    "HOME", "HOUSE", "SCHOOL", "WORK", "CAR", "BOOK", "PHONE"
+    "HOME", "HOUSE", "SCHOOL", "WORK", "CAR", "BOOK", "PHONE",
+    # Indian Sign Language, Cultural festivals, Regional words & Names
+    "ONAM", "DIWALI", "PONGAL", "HOLI", "EID", "CHRISTMAS",
+    "INDIA", "INDIAN", "NAMASTE", "VANAKKAM", "NAMASKAR",
+    "TAMIL", "HINDI", "MALAYALAM", "TELUGU", "KANNADA", "BENGALI",
+    "CHENNAI", "KERALA", "DELHI", "MUMBAI", "BANGALORE", "HYDERABAD", "KOLKATA",
+    "AMMA", "APPA", "BHAI", "DIDI", "DOST", "SIR", "MADAM", "MAM"
 ]
 
 
@@ -164,14 +170,30 @@ class TwoTierSpellCorrector:
                               f"runners-up={vocab_matches[1:3]})")
             return best_match, (best_match != raw), suggestions
 
+        # High-confidence fingerspelling protection:
+        # If user deliberately signed letters with solid confidence (mean >= 75%),
+        # and it wasn't a typo of a custom sign word, preserve their exact fingerspelling
+        # rather than guessing an arbitrary English dictionary word in Tier 2.
+        if letter_confidences and len(letter_confidences) == len(raw):
+            mean_conf = float(np.mean(letter_confidences))
+            min_conf = float(np.min(letter_confidences))
+            if mean_conf >= 0.75 and min_conf >= 0.50:
+                self.last_tier = f"T0 high-conf fingerspelling (mean={mean_conf:.2%})"
+                return raw, False, []
+
         # Tier 2: General English Dictionary fallback (only if allowed dist > 0)
         if max_allowed_dist > 0:
             gen_corr = self.general_spell.correction(raw.lower())
             if gen_corr:
                 gen_corr_upper = gen_corr.upper()
-                if levenshtein_distance(raw, gen_corr_upper) <= max_allowed_dist:
-                    self.last_tier = (f"T2 general-dict (dist={levenshtein_distance(raw, gen_corr_upper)}, "
-                                      f"max_allowed={max_allowed_dist})")
+                dist = levenshtein_distance(raw, gen_corr_upper)
+                # Critical Safeguards:
+                # 1. Do NOT delete first or last letter (e.g. ONAM -> NAM or ONAM -> ONA)
+                is_truncation = (len(gen_corr_upper) < len(raw) and (raw.startswith(gen_corr_upper) or raw.endswith(gen_corr_upper)))
+                # 2. Must be an established word with meaningful corpus frequency (>= 1000)
+                freq = self.general_spell.word_frequency[gen_corr.lower()]
+                if dist <= max_allowed_dist and not is_truncation and freq >= 1000:
+                    self.last_tier = (f"T2 general-dict (dist={dist}, max_allowed={max_allowed_dist})")
                     return gen_corr_upper, True, [gen_corr_upper]
 
         # Tier 3: No close match found — preserve raw buffer and suggest nearest custom words

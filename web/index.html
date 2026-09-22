@@ -36,7 +36,9 @@
   </div>
 
   <div class="topbar-right">
-    <button class="ghost-btn guide-btn" popovertarget="panel-guide" id="btn-open-guide">📖 Sign Guide</button>
+    <button class="ghost-btn guide-btn" popovertarget="panel-guide" id="btn-open-guide" aria-label="Open Sign Guide">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: -2px; margin-right: 5px;"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"></path><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"></path></svg><span>Sign Guide</span>
+    </button>
     <button class="ghost-btn" popovertarget="panel-settings">Settings</button>
     <button class="ghost-btn" popovertarget="panel-help">Shortcuts</button>
     <div class="status-pill" id="status-pill">
@@ -272,8 +274,8 @@
   <div class="field">
     <label for="set-timeout">Auto-push word delay</label>
     <div class="field-row">
-      <input type="range" id="set-timeout" min="1.0" max="4.0" step="0.5" value="2.0" />
-      <output class="field-value" id="out-timeout">2.0s</output>
+      <input type="range" id="set-timeout" min="1.0" max="5.0" step="0.5" value="3.0" />
+      <output class="field-value" id="out-timeout">3.0s</output>
     </div>
     <p class="field-help">How long you must lower your hand before the word commits to sentence.</p>
   </div>
@@ -300,18 +302,20 @@
     <div class="key-row"><kbd>2</kbd><span>Switch to ISL</span></div>
     <div class="key-row"><kbd>3</kbd><span>Switch to Practice (VISUALLY)</span></div>
   </div>
+</div>
+
 <!-- ══ SIGN REFERENCE GUIDE (top layer modal) ═══════════════════════════ -->
 <div popover id="panel-guide" class="sheet sheet-wide">
   <header class="sheet-head">
     <div class="sheet-title-group">
-      <h2 class="sheet-title">📖 Sign Reference Guide</h2>
+      <h2 class="sheet-title">Sign Reference Guide</h2>
       <span class="sheet-sub">Official hand gestures, required hand counts & poses</span>
     </div>
     <div class="guide-tabs" role="tablist">
       <button class="guide-tab-btn active" id="tab-guide-isl" role="tab" aria-selected="true">🇮🇳 ISL (Indian Sign Language)</button>
       <button class="guide-tab-btn" id="tab-guide-asl" role="tab" aria-selected="false">🇺🇸 ASL (American Sign Language)</button>
     </div>
-    <button class="ghost-btn" popovertarget="panel-guide" popovertargetaction="hide">Close</button>
+    <button class="ghost-btn" id="btn-close-guide" popovertarget="panel-guide" popovertargetaction="hide">Close</button>
   </header>
 
   <!-- ISL Tab Content -->
@@ -355,6 +359,6 @@
 </div>
 
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
-<script src="app.js?v=4"></script>
+<script src="app.js?v=6"></script>
 </body>
 </html>

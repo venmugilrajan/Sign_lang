@@ -8,7 +8,7 @@
 // ── Config ──────────────────────────────────────────────────────────────────
 let   STREAK_NEEDED   = 5;     // frames of same letter to capture (settings sheet, matches native)
 const COOLDOWN_MS     = 350;   // ms after capture before detecting again (fluid sign transitions)
-let   SPACE_FRAMES    = 60;    // no-hand frames before auto word push (~2.0s at 30fps)
+let   SPACE_FRAMES    = 90;    // no-hand frames before auto word push (~3.0s at 30fps, plenty of transition time)
 let   MIN_CONFIDENCE  = 0.50;  // minimum classifier confidence (settings sheet, matches native 0.40-0.50)
 const MIN_HAND_SPAN   = 35;    // minimum pixel distance between wrist and middle MCP to reject ghost hands
 
@@ -1101,7 +1101,11 @@ function setupControls() {
 }
 
 // ── Sign Reference Guide Modal ───────────────────────────────────────────────
+// ── Sign Reference Guide Modal ───────────────────────────────────────────────
 function initSignGuide() {
+  const panelGuide = document.getElementById('panel-guide');
+  const btnOpenGuide = document.getElementById('btn-open-guide');
+  const btnCloseGuide = document.getElementById('btn-close-guide');
   const tabIsl = document.getElementById('tab-guide-isl');
   const tabAsl = document.getElementById('tab-guide-asl');
   const contentIsl = document.getElementById('guide-content-isl');
@@ -1109,68 +1113,151 @@ function initSignGuide() {
   const singleGrid = document.getElementById('isl-single-cards');
   const dualGrid = document.getElementById('isl-dual-cards');
 
-  if (!tabIsl || !tabAsl || !contentIsl || !contentAsl) return;
-
-  tabIsl.addEventListener('click', () => {
-    tabIsl.classList.add('active');
-    tabAsl.classList.remove('active');
-    tabIsl.setAttribute('aria-selected', 'true');
-    tabAsl.setAttribute('aria-selected', 'false');
-    contentIsl.classList.remove('hidden');
-    contentAsl.classList.add('hidden');
-  });
-
-  tabAsl.addEventListener('click', () => {
-    tabAsl.classList.add('active');
-    tabIsl.classList.remove('active');
-    tabAsl.setAttribute('aria-selected', 'true');
-    tabIsl.setAttribute('aria-selected', 'false');
-    contentAsl.classList.remove('hidden');
-    contentIsl.classList.add('hidden');
-  });
-
-  function renderGuideCards() {
-    if (!practiceTemplates || !practiceTemplates.isl) return;
-    const isl = practiceTemplates.isl;
-
-    if (singleGrid) singleGrid.innerHTML = '';
-    if (dualGrid) dualGrid.innerHTML = '';
-
-    const singleKeys = ['1', '2', '3', '4', '5', '6', '7', '8', '9', 'C', 'I', 'L', 'O', 'U', 'V'];
-    const dualKeys = ['A', 'B', 'D', 'E', 'F', 'G', 'H', 'J', 'K', 'M', 'N', 'P', 'Q', 'R', 'S', 'T', 'W', 'X', 'Y', 'Z'];
-
-    singleKeys.forEach(k => {
-      const data = isl[k] || {};
-      const card = createGuideCard(k, false, data.desc || 'Single hand sign');
-      if (singleGrid) singleGrid.appendChild(card);
-    });
-
-    dualKeys.forEach(k => {
-      const data = isl[k] || {};
-      const card = createGuideCard(k, true, data.desc || 'Dual hand sign');
-      if (dualGrid) dualGrid.appendChild(card);
-    });
-  }
+  const islDescFallback = {
+    '1': 'Index finger extended upwards',
+    '2': 'Index and middle fingers extended in V-shape',
+    '3': 'Thumb, index, and middle fingers extended',
+    '4': 'Four fingers extended upwards',
+    '5': 'Open hand with all five fingers spread',
+    '6': 'Thumb and little finger extended',
+    '7': 'Thumb, index, and little finger extended',
+    '8': 'Middle, ring, and little fingers extended',
+    '9': 'Thumb touching index finger in circle',
+    'C': 'Curved hand forming C-shape',
+    'I': 'Little finger extended upwards',
+    'L': 'Thumb and index finger forming L-shape',
+    'O': 'All fingers curved touching thumb in O-shape',
+    'U': 'Index and middle fingers held together vertically',
+    'V': 'Index and middle fingers in open V-shape',
+    'A': 'Dominant index finger touching non-dominant thumb tip',
+    'B': 'Both hands forming double circles / glasses pose',
+    'D': 'Dominant index pointing to non-dominant index forming D',
+    'E': 'Dominant index touching non-dominant index tip',
+    'F': 'Dominant index and middle crossing non-dominant index and middle',
+    'G': 'Both fists held together vertically with knuckles facing forward',
+    'H': 'Dominant open palm sweeping flat across non-dominant palm',
+    'J': 'Index finger drawing J stroke across non-dominant palm',
+    'K': 'Dominant index finger hooking over non-dominant index finger',
+    'M': 'Dominant three fingers laid across non-dominant palm',
+    'N': 'Dominant two fingers laid across non-dominant palm',
+    'P': 'Dominant index finger forming circle with thumb touching non-dominant tip',
+    'Q': 'Dominant hand forming circle loop with non-dominant index through',
+    'R': 'Dominant index finger hooked on non-dominant palm',
+    'S': 'Dominant pinky hooking non-dominant pinky / fist lock',
+    'T': 'Dominant index finger placed perpendicularly on non-dominant index side',
+    'W': 'Interlocking open fingers of both hands upright',
+    'X': 'Crossing both index fingers in an X',
+    'Y': 'Dominant index pointing between non-dominant thumb and index',
+    'Z': 'Dominant open palm held upright against non-dominant palm'
+  };
 
   function createGuideCard(letter, isTwoHanded, desc) {
     const el = document.createElement('div');
     el.className = 'guide-card';
     el.title = `${letter}: ${desc}`;
     el.innerHTML = `
-      <img class="guide-card-img" src="isl_signs/${letter}.png" alt="Sign ${letter}" loading="lazy" />
-      <div class="guide-card-meta">
-        <span class="guide-card-letter">${letter}</span>
-        <span class="guide-card-type ${isTwoHanded ? 'two-hand' : 'one-hand'}">${isTwoHanded ? '2 Hands' : '1 Hand'}</span>
+      <div class="guide-card-img-wrap">
+        <img src="isl_signs/${letter}.png" alt="Sign ${letter}" loading="lazy" />
       </div>
-      <p class="guide-card-desc">${desc}</p>
+      <div class="guide-card-body">
+        <span class="guide-card-char">${letter}</span>
+        <span class="guide-card-hands ${isTwoHanded ? 'pill-blue' : 'pill-amber'} pill-badge">${isTwoHanded ? '2 Hands' : '1 Hand'}</span>
+      </div>
+      <p class="guide-card-desc" style="padding: 6px 10px 10px; font-size: 0.72rem; color: var(--text-dim); line-height: 1.35; margin: 0;">${desc}</p>
     `;
     return el;
   }
 
-  window._renderGuideCards = renderGuideCards;
-  if (practiceTemplates && practiceTemplates.isl && Object.keys(practiceTemplates.isl).length > 0) {
-    renderGuideCards();
+  function renderGuideCards() {
+    if (!singleGrid || !dualGrid) return;
+    singleGrid.innerHTML = '';
+    dualGrid.innerHTML = '';
+
+    const isl = (practiceTemplates && practiceTemplates.isl) ? practiceTemplates.isl : {};
+    const singleKeys = ['1', '2', '3', '4', '5', '6', '7', '8', '9', 'C', 'I', 'L', 'O', 'U', 'V'];
+    const dualKeys = ['A', 'B', 'D', 'E', 'F', 'G', 'H', 'J', 'K', 'M', 'N', 'P', 'Q', 'R', 'S', 'T', 'W', 'X', 'Y', 'Z'];
+
+    singleKeys.forEach(k => {
+      const desc = (isl[k] && isl[k].desc) ? isl[k].desc : (islDescFallback[k] || 'Single hand sign');
+      singleGrid.appendChild(createGuideCard(k, false, desc));
+    });
+
+    dualKeys.forEach(k => {
+      const desc = (isl[k] && isl[k].desc) ? isl[k].desc : (islDescFallback[k] || 'Dual hand sign');
+      dualGrid.appendChild(createGuideCard(k, true, desc));
+    });
   }
+
+  function openGuide() {
+    renderGuideCards();
+    if (panelGuide) {
+      try {
+        if (panelGuide.showPopover) {
+          panelGuide.showPopover();
+        } else {
+          panelGuide.style.display = 'block';
+          panelGuide.classList.add('open');
+        }
+      } catch (err) {
+        panelGuide.style.display = 'block';
+        panelGuide.classList.add('open');
+      }
+    }
+  }
+
+  function closeGuide() {
+    if (panelGuide) {
+      try {
+        if (panelGuide.hidePopover) {
+          panelGuide.hidePopover();
+        } else {
+          panelGuide.style.display = 'none';
+          panelGuide.classList.remove('open');
+        }
+      } catch (err) {
+        panelGuide.style.display = 'none';
+        panelGuide.classList.remove('open');
+      }
+    }
+  }
+
+  if (btnOpenGuide) {
+    btnOpenGuide.addEventListener('click', (e) => {
+      e.preventDefault();
+      openGuide();
+    });
+  }
+
+  if (btnCloseGuide) {
+    btnCloseGuide.addEventListener('click', (e) => {
+      e.preventDefault();
+      closeGuide();
+    });
+  }
+
+  if (tabIsl && tabAsl && contentIsl && contentAsl) {
+    tabIsl.addEventListener('click', () => {
+      tabIsl.classList.add('active');
+      tabAsl.classList.remove('active');
+      tabIsl.setAttribute('aria-selected', 'true');
+      tabAsl.setAttribute('aria-selected', 'false');
+      contentIsl.classList.remove('hidden');
+      contentAsl.classList.add('hidden');
+    });
+
+    tabAsl.addEventListener('click', () => {
+      tabAsl.classList.add('active');
+      tabIsl.classList.remove('active');
+      tabAsl.setAttribute('aria-selected', 'true');
+      tabIsl.setAttribute('aria-selected', 'false');
+      contentAsl.classList.remove('hidden');
+      contentIsl.classList.add('hidden');
+    });
+  }
+
+  window._renderGuideCards = renderGuideCards;
+  window._openSignGuide = openGuide;
+  renderGuideCards();
 }
 
 // ── Startup ──────────────────────────────────────────────────────────────────

@@ -1467,3 +1467,198 @@ kbd {
   color: var(--accent-text);
 }
 
+/* ══════════════════════════════════════════════════════════════════════
+   SIGN REFERENCE GUIDE MODAL
+   ══════════════════════════════════════════════════════════════════════ */
+.sheet-wide {
+  width: min(880px, calc(100vw - 40px));
+  max-height: calc(100vh - 80px);
+  overflow-y: auto;
+  top: 50%;
+  left: 50%;
+  right: auto;
+  transform: translate(-50%, -50%) scale(0.96);
+  padding: 24px;
+  background: var(--surface);
+  border: 1px solid var(--line-bright);
+  border-radius: var(--r-panel);
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.75);
+}
+
+.sheet-wide:popover-open,
+.sheet-wide.open {
+  transform: translate(-50%, -50%) scale(1);
+}
+
+.sheet-title-group {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.sheet-sub {
+  font-size: 0.78rem;
+  color: var(--text-dim);
+}
+
+.guide-tabs {
+  display: flex;
+  gap: 6px;
+  background: var(--surface-2);
+  padding: 4px;
+  border-radius: var(--r-ctrl);
+  border: 1px solid var(--line);
+}
+
+.guide-tab-btn {
+  padding: 6px 14px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--text-dim);
+  background: transparent;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all var(--dur) var(--ease);
+}
+
+.guide-tab-btn:hover {
+  color: var(--text);
+}
+
+.guide-tab-btn.active {
+  background: var(--surface-3);
+  color: var(--accent-text);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.3);
+}
+
+.guide-alert-banner {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 12px 16px;
+  margin-bottom: 20px;
+  background: color-mix(in oklab, var(--accent) 12%, transparent);
+  border: 1px solid color-mix(in oklab, var(--accent) 30%, transparent);
+  border-radius: 10px;
+  font-size: 0.82rem;
+  color: var(--text);
+  line-height: 1.45;
+}
+
+.guide-alert-banner .banner-icon {
+  font-size: 1.2rem;
+  flex: none;
+}
+
+.guide-section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.guide-section-title {
+  font-size: 0.88rem;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.pill-badge {
+  font-size: 0.68rem;
+  font-weight: 700;
+  padding: 3px 8px;
+  border-radius: var(--r-pill);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.pill-amber {
+  background: rgba(245, 158, 11, 0.15);
+  color: #fbbf24;
+  border: 1px solid rgba(245, 158, 11, 0.3);
+}
+
+.pill-blue {
+  background: rgba(59, 130, 246, 0.15);
+  color: #60a5fa;
+  border: 1px solid rgba(59, 130, 246, 0.3);
+}
+
+.guide-cards-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+  gap: 12px;
+}
+
+.guide-card {
+  display: flex;
+  flex-direction: column;
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  overflow: hidden;
+  transition: transform var(--dur) var(--ease), border-color var(--dur) var(--ease);
+}
+
+.guide-card:hover {
+  transform: translateY(-2px);
+  border-color: var(--accent-line);
+}
+
+.guide-card-img-wrap {
+  width: 100%;
+  aspect-ratio: 1;
+  background: #000;
+  position: relative;
+  overflow: hidden;
+}
+
+.guide-card-img-wrap img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.guide-card-body {
+  padding: 8px 10px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: var(--surface-3);
+  border-top: 1px solid var(--line);
+}
+
+.guide-card-char {
+  font-family: var(--mono);
+  font-size: 1.15rem;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.guide-card-hands {
+  font-size: 0.65rem;
+  font-weight: 600;
+  color: var(--text-dim);
+}
+
+.guide-tab-content.hidden {
+  display: none;
+}
+
+.asl-chart-wrap {
+  width: 100%;
+  border-radius: 10px;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  background: #000;
+}
+
+.asl-full-chart {
+  width: 100%;
+  display: block;
+  object-fit: contain;
+}
+
+
