@@ -183,13 +183,41 @@ def predict_landmarks():
     try:
         # classes_ holds LabelEncoder integers; landmark_labels holds the real names.
         labels = [str(c) for c in landmark_labels[mode]]
-        probs = clf.predict_proba([features])[0]
+        probs = np.array(clf.predict_proba([features])[0], dtype=np.float32)
+
+        # ── ISL Hand-Count Constrained Gating ─────────────────────────────────
+        # Prevents 1-hand gestures from falsely predicting 2-hand signs like 'R' or 'A',
+        # and guarantees single-hand signs (5, 1, 2, C, L, etc.) fire with maximum precision.
+        if mode == "isl" and len(features) == 156:
+            ISL_SINGLE_HAND = {'1', '2', '3', '4', '5', '6', '7', '8', '9', 'C', 'I', 'J', 'L', 'O', 'Q', 'U', 'V'}
+            ISL_TWO_HAND = {'A', 'B', 'D', 'E', 'F', 'G', 'H', 'K', 'M', 'N', 'P', 'R', 'S', 'T', 'W', 'X', 'Y', 'Z'}
+
+            slot2 = features[78:]
+            num_hands = 1 if all(abs(v) < 1e-4 for v in slot2) else 2
+
+            if num_hands == 1:
+                for i, c in enumerate(labels):
+                    if c not in ISL_SINGLE_HAND:
+                        probs[i] = 0.0
+            else:
+                for i, c in enumerate(labels):
+                    if c not in ISL_TWO_HAND:
+                        probs[i] = 0.0
+
+            p_sum = float(np.sum(probs))
+            if p_sum > 0:
+                probs = probs / p_sum
+
         top_idx = int(np.argmax(probs))
         top_label = labels[top_idx]
         top_conf = float(probs[top_idx])
 
         top3_indices = np.argsort(probs)[::-1][:3]
-        top3 = [{"label": labels[i], "confidence": round(float(probs[i]), 4)} for i in top3_indices]
+        top3 = [{"label": labels[i], "confidence": round(float(probs[i]), 4)} for i in top3_indices if probs[i] > 0.001]
+        if not top3:
+            top3 = [{"label": top_label, "confidence": round(top_conf, 4)}]
+
+        print(f"[/predict_landmarks] {mode.upper()} -> {top_label} ({top_conf:.2%}) | Top3: {[(t['label'], t['confidence']) for t in top3]}", flush=True)
 
         return jsonify({
             "mode": mode,

@@ -36,6 +36,7 @@
   </div>
 
   <div class="topbar-right">
+    <button class="ghost-btn guide-btn" popovertarget="panel-guide" id="btn-open-guide">📖 Sign Guide</button>
     <button class="ghost-btn" popovertarget="panel-settings">Settings</button>
     <button class="ghost-btn" popovertarget="panel-help">Shortcuts</button>
     <div class="status-pill" id="status-pill">
@@ -82,6 +83,7 @@
       </div>
 
       <div class="stage-actions">
+        <button class="ctrl-btn" popovertarget="panel-guide" id="stage-guide-btn" title="View official sign chart">Guide</button>
         <button class="ctrl-btn" id="btn-pause-detection">Pause</button>
         <button class="ctrl-btn active-btn" id="btn-camera-toggle">Stop Camera</button>
       </div>
@@ -219,6 +221,15 @@
         <span id="avatar-status-text">Ready</span>
       </div>
 
+      <!-- Real Human Sign Reference Preview -->
+      <div class="avatar-photo-ref" id="avatar-photo-ref" style="display: none;">
+        <img id="avatar-photo-img" src="" alt="Real Sign Reference" />
+        <div class="avatar-photo-meta">
+          <span class="avatar-photo-tag" id="avatar-photo-tag">Photo Ref</span>
+          <span class="avatar-photo-type" id="avatar-photo-type">2-Hand</span>
+        </div>
+      </div>
+
       <!-- Playback Controls Floating Bar -->
       <div class="avatar-controls-bar">
         <button class="avatar-ctrl-btn" id="btn-avatar-prev" title="Previous letter">⏮</button>
@@ -289,9 +300,61 @@
     <div class="key-row"><kbd>2</kbd><span>Switch to ISL</span></div>
     <div class="key-row"><kbd>3</kbd><span>Switch to Practice (VISUALLY)</span></div>
   </div>
+<!-- ══ SIGN REFERENCE GUIDE (top layer modal) ═══════════════════════════ -->
+<div popover id="panel-guide" class="sheet sheet-wide">
+  <header class="sheet-head">
+    <div class="sheet-title-group">
+      <h2 class="sheet-title">📖 Sign Reference Guide</h2>
+      <span class="sheet-sub">Official hand gestures, required hand counts & poses</span>
+    </div>
+    <div class="guide-tabs" role="tablist">
+      <button class="guide-tab-btn active" id="tab-guide-isl" role="tab" aria-selected="true">🇮🇳 ISL (Indian Sign Language)</button>
+      <button class="guide-tab-btn" id="tab-guide-asl" role="tab" aria-selected="false">🇺🇸 ASL (American Sign Language)</button>
+    </div>
+    <button class="ghost-btn" popovertarget="panel-guide" popovertargetaction="hide">Close</button>
+  </header>
+
+  <!-- ISL Tab Content -->
+  <div class="guide-tab-content" id="guide-content-isl">
+    <div class="guide-alert-banner">
+      <span class="banner-icon">⚠️</span>
+      <div>
+        <strong>Crucial Rule in ISL:</strong> 20 alphabet letters (<kbd>A, B, D, E, F, G, H, J, K, M, N, P, Q, R, S, T, W, X, Y, Z</kbd>) strictly require <strong>TWO HANDS</strong>. Only numbers <kbd>1-9</kbd> and letters <kbd>C, I, L, O, U, V</kbd> use a single hand!
+      </div>
+    </div>
+
+    <div class="guide-section">
+      <div class="guide-section-head">
+        <h3 class="guide-section-title">Single-Hand Gestures (15 Signs)</h3>
+        <span class="pill-badge pill-amber">1-Hand Required</span>
+      </div>
+      <div class="guide-cards-grid" id="isl-single-cards"></div>
+    </div>
+
+    <div class="guide-section" style="margin-top: 28px;">
+      <div class="guide-section-head">
+        <h3 class="guide-section-title">Dual-Hand Gestures (20 Signs)</h3>
+        <span class="pill-badge pill-blue">2-Hands Required</span>
+      </div>
+      <div class="guide-cards-grid" id="isl-dual-cards"></div>
+    </div>
+  </div>
+
+  <!-- ASL Tab Content -->
+  <div class="guide-tab-content hidden" id="guide-content-asl">
+    <div class="guide-alert-banner">
+      <span class="banner-icon">💡</span>
+      <div>
+        <strong>Rule in ASL:</strong> All 26 alphabet letters (<kbd>A to Z</kbd>) are performed using <strong>ONE dominant hand</strong>.
+      </div>
+    </div>
+    <div class="asl-chart-wrap">
+      <img src="ASL_Alphabet_Chart.png" alt="ASL Alphabet Reference Chart" class="asl-full-chart" />
+    </div>
+  </div>
 </div>
 
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
-<script src="app.js?v=3"></script>
+<script src="app.js?v=4"></script>
 </body>
 </html>

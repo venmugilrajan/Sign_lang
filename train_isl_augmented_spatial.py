@@ -79,6 +79,9 @@ options = vision.HandLandmarkerOptions(
 detector = vision.HandLandmarker.create_from_options(options)
 
 
+SINGLE_HAND_CLASSES = {'1', '2', '3', '4', '5', '6', '7', '8', '9', 'C', 'I', 'J', 'L', 'O', 'Q', 'U', 'V'}
+
+
 def calculate_angle_3d(a, b, c):
     ba = a - b
     bc = c - b
@@ -86,8 +89,21 @@ def calculate_angle_3d(a, b, c):
     return np.degrees(np.arccos(np.clip(cosine, -1.0, 1.0))) / 180.0
 
 
+def mirror_single_hand_features(feat):
+    """Reflects a 78-D single hand feature vector horizontally (x -> -x).
+    
+    Landmark 9 aligns with vertical 12 o'clock, so reflection strictly maps
+    a Right hand to a Left hand (and vice versa) with identical joint angles.
+    """
+    mirr = feat.copy()
+    for i in range(21):
+        mirr[i * 3] = -mirr[i * 3]
+    return mirr
+
+
 def extract_single_hand_features(landmarks, w, h):
     pts = np.array([[lm.x * w, lm.y * h, lm.z * w] for lm in landmarks], dtype=np.float32)
+
     pts_centered = pts - pts[0]
 
     scale = np.linalg.norm(pts_centered[9][:2])
@@ -95,15 +111,10 @@ def extract_single_hand_features(landmarks, w, h):
         scale = 1.0
     pts_scaled = pts_centered / scale
 
-    # KNOWN BUG (deferred): this rotates by +angle, which DOUBLES the palm angle
-    # instead of cancelling it (20 deg hand rotation -> 40 deg residual, 90 -> inverted),
-    # so these features are not rotation-invariant. Fix is one sign:
-    #     rot = np.array([[cos_a, -sin_a], [sin_a, cos_a]])
-    # Do NOT apply it alone -- every shipped .pkl/.json was trained on the broken
-    # transform, so ASL and both ISL variants must be retrained together.
+    # Align landmark 9 to vertical 12 o'clock (0, -1)
     angle = np.arctan2(pts_scaled[9, 0], -pts_scaled[9, 1])
     cos_a, sin_a = np.cos(angle), np.sin(angle)
-    rot = np.array([[cos_a, sin_a], [-sin_a, cos_a]])
+    rot = np.array([[cos_a, -sin_a], [sin_a, cos_a]])
 
     pts_aligned = pts_scaled.copy()
     pts_aligned[:, :2] = np.dot(pts_scaled[:, :2], rot)
@@ -112,7 +123,7 @@ def extract_single_hand_features(landmarks, w, h):
     return np.concatenate([pts_aligned.flatten(), angles])
 
 
-def extract_spatial_dual_hand_features(img_bgr):
+def extract_spatial_dual_hand_features(img_bgr, cls_name=None):
     h, w = img_bgr.shape[:2]
     mp_img = mp.Image(
         image_format=mp.ImageFormat.SRGB,
@@ -122,32 +133,39 @@ def extract_spatial_dual_hand_features(img_bgr):
     if not results.hand_landmarks:
         return None
 
-    hands = sorted(
-        ((lms[0].x, extract_single_hand_features(lms, w, h)) for lms in results.hand_landmarks),
-        key=lambda item: item[0],
-    )
+    num_hands = len(results.hand_landmarks)
+
+    if cls_name is not None:
+        if cls_name in SINGLE_HAND_CLASSES:
+            # Single-hand class: strictly accept 1 hand
+            if num_hands != 1:
+                return None
+        else:
+            # Two-handed class: strictly accept 2 hands (reject noisy 1-hand transition frames)
+            if num_hands != 2:
+                return None
+    elif num_hands > 2:
+        return None
+
+    hands = []
+    for lms in results.hand_landmarks[:2]:
+        feat = extract_single_hand_features(lms, w, h)
+        hands.append((lms[0].x, feat))
+
+    hands.sort(key=lambda item: item[0])
     slot1 = hands[0][1]
     slot2 = hands[1][1] if len(hands) > 1 else np.zeros(78, dtype=np.float32)
     return np.concatenate([slot1, slot2])
 
 
 def frame_number(filename):
-    """Leading integer of the filename == temporal frame index.
-
-    sorted() is lexicographic ('0','1','10','100'), which is NOT frame order,
-    so every ordering here must go through this key. Files like '217 copy.jpg'
-    share the frame number of '217.jpg' and therefore land in the same block.
-    """
+    """Leading integer of the filename == temporal frame index."""
     m = re.match(r"(\d+)", os.path.splitext(filename)[0])
     return int(m.group(1)) if m else -1
 
 
 def class_block_split(filenames):
-    """Assigns each file to 'train' or 'test' by contiguous frame block.
-
-    Whole blocks move together, so no near-duplicate neighbour can straddle
-    the split. Returns {filename: 'train'|'test'}.
-    """
+    """Assigns each file to 'train' or 'test' by contiguous frame block."""
     blocks = sorted({frame_number(f) // BLOCK_SIZE for f in filenames})
     rng = np.random.default_rng(SPLIT_SEED)
     shuffled = rng.permutation(blocks)
@@ -169,7 +187,7 @@ def build_dataset():
         raise SystemExit(f"[!] Dataset not found: {ISL_DIR}")
 
     classes = sorted(d for d in os.listdir(ISL_DIR) if (ISL_DIR / d).is_dir())
-    print(f"[*] Extracting block-split mirror-augmented landmarks for {len(classes)} classes...")
+    print(f"[*] Extracting clean dual-hand mirror-augmented landmarks for {len(classes)} classes...")
     print(f"    BLOCK_SIZE={BLOCK_SIZE} frames, {TEST_BLOCK_FRACTION:.0%} of blocks held out")
 
     X, y, split = [], [], []
@@ -177,41 +195,64 @@ def build_dataset():
         cls_dir = ISL_DIR / cls
         files = [f for f in os.listdir(cls_dir)
                  if f.lower().endswith((".jpg", ".jpeg", ".png"))]
-        # TRUE temporal order -- not sorted(), which is lexicographic
         files.sort(key=frame_number)
 
         assign = class_block_split(files)
 
-        # Sample evenly across the whole sequence instead of taking a prefix,
-        # so both splits see the full range of the recording.
         step = max(1, len(files) // MAX_PER_CLASS)
         chosen = files[::step][:MAX_PER_CLASS]
 
-        n_tr = n_te = 0
-        for fn in chosen:
+        valid_items = []
+        for fn in files:
             img = cv2.imread(str(cls_dir / fn))
             if img is None:
                 continue
-            h, w = img.shape[:2]
-            pad = int(max(h, w) * PAD_RATIO)
-            img = cv2.copyMakeBorder(img, pad, pad, pad, pad, cv2.BORDER_REPLICATE)
 
             where = assign[fn]
-            feat = extract_spatial_dual_hand_features(img)
-            if feat is None:
-                continue
-            X.append(feat); y.append(cls); split.append(where)
+            feat = extract_spatial_dual_hand_features(img, cls_name=cls)
+            feat_flip = extract_spatial_dual_hand_features(cv2.flip(img, 1), cls_name=cls)
 
-            # The mirror is the SAME underlying frame, so it inherits the same
-            # split -- otherwise a flipped twin would leak across the boundary.
-            feat_flip = extract_spatial_dual_hand_features(cv2.flip(img, 1))
+            if feat is not None or feat_flip is not None:
+                valid_items.append((feat, feat_flip, where))
+                if len(valid_items) >= MAX_PER_CLASS:
+                    break
+
+        train_items = [it for it in valid_items if it[2] == "train"]
+        test_items = [it for it in valid_items if it[2] == "test"]
+        if len(train_items) == 0:
+            n_tr = max(1, int(len(valid_items) * 0.8))
+            train_items = valid_items[:n_tr]
+            test_items = valid_items[n_tr:]
+        elif len(test_items) == 0 and len(valid_items) > 1:
+            n_tr = max(1, int(len(valid_items) * 0.8))
+            train_items = valid_items[:n_tr]
+            test_items = valid_items[n_tr:]
+
+        for feat, feat_flip, _ in train_items:
+            if feat is not None:
+                X.append(feat); y.append(cls); split.append("train")
+                if cls in SINGLE_HAND_CLASSES:
+                    mirr = mirror_single_hand_features(feat[:78])
+                    X.append(np.concatenate([mirr, np.zeros(78, dtype=np.float32)])); y.append(cls); split.append("train")
             if feat_flip is not None:
-                X.append(feat_flip); y.append(cls); split.append(where)
+                X.append(feat_flip); y.append(cls); split.append("train")
+                if cls in SINGLE_HAND_CLASSES:
+                    mirr = mirror_single_hand_features(feat_flip[:78])
+                    X.append(np.concatenate([mirr, np.zeros(78, dtype=np.float32)])); y.append(cls); split.append("train")
 
-            if where == "train": n_tr += 1
-            else: n_te += 1
+        for feat, feat_flip, _ in test_items:
+            if feat is not None:
+                X.append(feat); y.append(cls); split.append("test")
+                if cls in SINGLE_HAND_CLASSES:
+                    mirr = mirror_single_hand_features(feat[:78])
+                    X.append(np.concatenate([mirr, np.zeros(78, dtype=np.float32)])); y.append(cls); split.append("test")
+            if feat_flip is not None:
+                X.append(feat_flip); y.append(cls); split.append("test")
+                if cls in SINGLE_HAND_CLASSES:
+                    mirr = mirror_single_hand_features(feat_flip[:78])
+                    X.append(np.concatenate([mirr, np.zeros(78, dtype=np.float32)])); y.append(cls); split.append("test")
 
-        print(f" -> '{cls}': {n_tr} train + {n_te} test frames (x2 with mirrors)")
+        print(f" -> '{cls}': {len(train_items)} train + {len(test_items)} test frames (mirror augmented)", flush=True)
 
     X = np.array(X, dtype=np.float32)
     y = np.array(y)

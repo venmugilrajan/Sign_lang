@@ -265,10 +265,19 @@ function normalizeLandmarks(lm, w, h, handedness = "Right", applyHandednessMirro
   const ca = Math.cos(angle), sa = Math.sin(angle);
 
   const features = [];
+  // ISL uses the mathematically correct rotation matrix [[cos, -sin], [sin, cos]]
+  // that aligns landmark 9 to vertical 12 o'clock, cancelling any hand tilt.
+  const isIslMode = (typeof currentMode !== 'undefined' && currentMode === 'isl');
   cen.forEach(p => {
     const x = p[0]/scale, y = p[1]/scale;
-    features.push(x*ca - y*sa);
-    features.push(x*sa + y*ca);
+    if (isIslMode) {
+      features.push(x*ca + y*sa);
+      features.push(-x*sa + y*ca);
+    } else {
+      // ASL legacy rotation
+      features.push(x*ca - y*sa);
+      features.push(x*sa + y*ca);
+    }
     features.push(p[2]/scale);          // z is scaled but not rotated
   });
 
@@ -321,7 +330,7 @@ async function probeServer() {
       if (!serverAvailable) {
         serverAvailable = true;
         console.log('✅ Flask backend detected — using server-side inference');
-        setStatus('ready', 'Connected (server)');
+        setStatus('ready', 'Connected');
       }
     } else {
       serverAvailable = false;
@@ -330,6 +339,10 @@ async function probeServer() {
     serverAvailable = false;
   } finally {
     serverCheckPending = false;
+    // If server is currently offline, automatically retry in 2.5s
+    if (!serverAvailable && cameraActive) {
+      setTimeout(probeServer, 2500);
+    }
   }
 }
 
@@ -368,13 +381,12 @@ function buildFeatureVector(multiHandLandmarks, isDualMode, multiHandedness, w, 
     return normalizeLandmarks(multiHandLandmarks[0], w, h, handedness, true);
   }
 
+  // Dual mode (ISL):
+  // Single-hand ISL model is trained on BOTH Left & Right hands natively,
+  // and two-handed classes strictly require both hands.
+  // No fragile handedness guessing/mirroring is needed.
   const hands = multiHandLandmarks
-    .map((lm, idx) => {
-      const handedness = (multiHandedness && multiHandedness[idx] && multiHandedness[idx].label)
-        ? multiHandedness[idx].label
-        : 'Right';
-      return { x: lm[0].x, feat: normalizeLandmarks(lm, w, h, handedness, false) };
-    })
+    .map(lm => ({ x: lm[0].x, feat: normalizeLandmarks(lm, w, h, 'Right', false) }))
     .sort((a, b) => a.x - b.x);
 
   const slot1 = hands[0].feat;
@@ -427,7 +439,24 @@ function classifyJS(featureVector) {
     }
   }
 
-  const probs = softmax(h);
+  let probs = softmax(h);
+
+  // ── ISL Hand-Count Constrained Gating ─────────────────────────────────
+  if (currentMode === 'isl' && x.length === 156) {
+    const isOneHand = x.slice(78).every(v => Math.abs(v) < 1e-4);
+    const islSingleHand = new Set(['1', '2', '3', '4', '5', '6', '7', '8', '9', 'C', 'I', 'J', 'L', 'O', 'Q', 'U', 'V']);
+    for (let i = 0; i < probs.length; i++) {
+      const cls = currentWeights.classes[i];
+      if (isOneHand ? !islSingleHand.has(cls) : islSingleHand.has(cls)) {
+        probs[i] = 0;
+      }
+    }
+    const pSum = probs.reduce((a, b) => a + b, 0);
+    if (pSum > 0) {
+      probs = probs.map(p => p / pSum);
+    }
+  }
+
   let maxIdx = 0, maxProb = 0, secondProb = 0;
   for (let i = 0; i < probs.length; i++) {
     if (probs[i] > maxProb) { secondProb = maxProb; maxProb = probs[i]; maxIdx = i; }
@@ -457,8 +486,10 @@ async function classify(multiHandLandmarks, multiHandedness) {
   // Determine if active model is dual-hand (156-D) or single-hand (78-D)
   const isDualMode = currentWeights ? currentWeights.w0.length === 156 : false;
 
-  // Build feature vector (always in JS — fast, correct, no round-trip cost)
-  const featureVector = buildFeatureVector(multiHandLandmarks, isDualMode, multiHandedness);
+  // Build feature vector with true display/camera aspect ratio
+  const cw = (displayCanvas && displayCanvas.width) || (video && video.videoWidth) || 640;
+  const ch = (displayCanvas && displayCanvas.height) || (video && video.videoHeight) || 480;
+  const featureVector = buildFeatureVector(multiHandLandmarks, isDualMode, multiHandedness, cw, ch);
 
   // ── PATH A: Server-side inference (preferred) ────────────────────────────
   if (serverAvailable) {
@@ -467,7 +498,7 @@ async function classify(multiHandLandmarks, multiHandedness) {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ mode: currentMode, landmarks: featureVector }),
-        signal: AbortSignal.timeout(300),   // 300ms hard timeout per frame
+        signal: AbortSignal.timeout(1500),   // 1500ms resilient timeout per frame
       });
 
       if (response.ok) {
@@ -567,7 +598,11 @@ async function onResults(results) {
   if (validHands.length > 0) {
     noHandOverlay.classList.remove('visible');
     handBadge.className   = 'hand-badge live';
-    handBadge.textContent = validHands.length > 1 ? '2 HANDS DETECTED' : 'HAND DETECTED';
+    if (currentMode === 'isl') {
+      handBadge.textContent = validHands.length > 1 ? '2 HANDS · ISL (A-Z)' : '1 HAND · ISL (1-9, C, I, L, O, U, V)';
+    } else {
+      handBadge.textContent = validHands.length > 1 ? '2 HANDS DETECTED' : 'HAND DETECTED';
+    }
     validHands.forEach(drawSkeleton);
 
     // Skip this frame if the previous classify() hasn't returned yet
@@ -1065,6 +1100,79 @@ function setupControls() {
   });
 }
 
+// ── Sign Reference Guide Modal ───────────────────────────────────────────────
+function initSignGuide() {
+  const tabIsl = document.getElementById('tab-guide-isl');
+  const tabAsl = document.getElementById('tab-guide-asl');
+  const contentIsl = document.getElementById('guide-content-isl');
+  const contentAsl = document.getElementById('guide-content-asl');
+  const singleGrid = document.getElementById('isl-single-cards');
+  const dualGrid = document.getElementById('isl-dual-cards');
+
+  if (!tabIsl || !tabAsl || !contentIsl || !contentAsl) return;
+
+  tabIsl.addEventListener('click', () => {
+    tabIsl.classList.add('active');
+    tabAsl.classList.remove('active');
+    tabIsl.setAttribute('aria-selected', 'true');
+    tabAsl.setAttribute('aria-selected', 'false');
+    contentIsl.classList.remove('hidden');
+    contentAsl.classList.add('hidden');
+  });
+
+  tabAsl.addEventListener('click', () => {
+    tabAsl.classList.add('active');
+    tabIsl.classList.remove('active');
+    tabAsl.setAttribute('aria-selected', 'true');
+    tabIsl.setAttribute('aria-selected', 'false');
+    contentAsl.classList.remove('hidden');
+    contentIsl.classList.add('hidden');
+  });
+
+  function renderGuideCards() {
+    if (!practiceTemplates || !practiceTemplates.isl) return;
+    const isl = practiceTemplates.isl;
+
+    if (singleGrid) singleGrid.innerHTML = '';
+    if (dualGrid) dualGrid.innerHTML = '';
+
+    const singleKeys = ['1', '2', '3', '4', '5', '6', '7', '8', '9', 'C', 'I', 'L', 'O', 'U', 'V'];
+    const dualKeys = ['A', 'B', 'D', 'E', 'F', 'G', 'H', 'J', 'K', 'M', 'N', 'P', 'Q', 'R', 'S', 'T', 'W', 'X', 'Y', 'Z'];
+
+    singleKeys.forEach(k => {
+      const data = isl[k] || {};
+      const card = createGuideCard(k, false, data.desc || 'Single hand sign');
+      if (singleGrid) singleGrid.appendChild(card);
+    });
+
+    dualKeys.forEach(k => {
+      const data = isl[k] || {};
+      const card = createGuideCard(k, true, data.desc || 'Dual hand sign');
+      if (dualGrid) dualGrid.appendChild(card);
+    });
+  }
+
+  function createGuideCard(letter, isTwoHanded, desc) {
+    const el = document.createElement('div');
+    el.className = 'guide-card';
+    el.title = `${letter}: ${desc}`;
+    el.innerHTML = `
+      <img class="guide-card-img" src="isl_signs/${letter}.png" alt="Sign ${letter}" loading="lazy" />
+      <div class="guide-card-meta">
+        <span class="guide-card-letter">${letter}</span>
+        <span class="guide-card-type ${isTwoHanded ? 'two-hand' : 'one-hand'}">${isTwoHanded ? '2 Hands' : '1 Hand'}</span>
+      </div>
+      <p class="guide-card-desc">${desc}</p>
+    `;
+    return el;
+  }
+
+  window._renderGuideCards = renderGuideCards;
+  if (practiceTemplates && practiceTemplates.isl && Object.keys(practiceTemplates.isl).length > 0) {
+    renderGuideCards();
+  }
+}
+
 // ── Startup ──────────────────────────────────────────────────────────────────
 window.addEventListener('DOMContentLoaded', async () => {
   displayCanvas.width  = 640;
@@ -1073,6 +1181,7 @@ window.addEventListener('DOMContentLoaded', async () => {
   // Wire controls FIRST: a camera failure must not leave every button dead.
   setupControls();
   initPracticeStudio();
+  initSignGuide();
 
   setStatus('loading', 'Loading…');
   try {
@@ -1184,6 +1293,7 @@ function initPracticeStudio() {
       // Set initial pose
       practiceCurrentPose = clonePose(getTemplatePose('REST'));
       drawAvatar();
+      if (window._renderGuideCards) window._renderGuideCards();
     })
     .catch(err => {
       console.warn('[PracticeStudio] Failed to load sign_templates.json:', err);
@@ -1502,6 +1612,20 @@ function initPracticeStudio() {
     if (hudStatus) {
       if (practiceIsPlaying) hudStatus.classList.add('playing');
       else hudStatus.classList.remove('playing');
+    }
+
+    // Real human photo reference card preview
+    const photoRef = document.getElementById('avatar-photo-ref');
+    const photoImg = document.getElementById('avatar-photo-img');
+    const photoType = document.getElementById('avatar-photo-type');
+    if (photoRef && photoImg) {
+      if (practiceDialect === 'isl' && currChar && currChar !== ' ') {
+        photoImg.src = `isl_signs/${currChar}.png`;
+        if (photoType) photoType.textContent = is2H ? '2-Hands' : '1-Hand';
+        photoRef.style.display = 'flex';
+      } else {
+        photoRef.style.display = 'none';
+      }
     }
   }
 
