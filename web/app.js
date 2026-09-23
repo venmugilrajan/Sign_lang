@@ -1800,14 +1800,17 @@ function initPracticeStudio() {
       else hudStatus.classList.remove('playing');
     }
 
-    // Real human photo reference card preview
+    // Real human photo reference card preview (both ASL & ISL)
     const photoRef = document.getElementById('avatar-photo-ref');
     const photoImg = document.getElementById('avatar-photo-img');
+    const photoHeader = document.getElementById('avatar-photo-header');
     const photoType = document.getElementById('avatar-photo-type');
     if (photoRef && photoImg) {
-      if (practiceDialect === 'isl' && currChar && currChar !== ' ') {
-        photoImg.src = `isl_signs/${currChar}.png`;
-        if (photoType) photoType.textContent = is2H ? '2-Hands' : '1-Hand';
+      if (currChar && currChar !== ' ') {
+        const isISL = practiceDialect === 'isl';
+        photoImg.src = isISL ? `isl_signs/${currChar}.png` : `asl_signs/${currChar}.png`;
+        if (photoHeader) photoHeader.textContent = `${practiceDialect.toUpperCase()}: ${currChar}`;
+        if (photoType) photoType.textContent = isISL ? (is2H ? '2-Hands' : '1-Hand') : '1-Hand';
         photoRef.style.display = 'flex';
       } else {
         photoRef.style.display = 'none';
