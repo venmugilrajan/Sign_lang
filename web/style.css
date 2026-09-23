@@ -720,14 +720,14 @@ kbd {
   gap: 14px;
   min-width: 0;
   min-height: 0;
-  overflow: hidden;
+  overflow: visible;
 }
 
 .practice-panel {
   display: flex;
   flex-direction: column;
   gap: 16px;
-  overflow: hidden;
+  overflow: visible;
 }
 
 .practice-head-title {
@@ -757,18 +757,25 @@ kbd {
   padding: 3px;
   border-radius: var(--r-pill);
   border: 1px solid var(--line);
+  position: relative;
+  z-index: 20;
 }
 
 .dialect-pill {
-  padding: 4px 14px;
+  position: relative;
+  z-index: 21;
+  padding: 5px 16px;
+  min-height: 28px;
   border-radius: var(--r-pill);
   border: none;
   background: transparent;
   font-family: var(--mono);
-  font-size: 0.75rem;
+  font-size: 0.8rem;
   font-weight: 600;
   color: var(--text-dim);
   cursor: pointer;
+  user-select: none;
+  touch-action: manipulation;
   transition: all var(--dur) var(--ease);
 }
 
