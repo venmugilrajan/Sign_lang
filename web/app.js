@@ -1478,12 +1478,31 @@ function initPracticeStudio() {
     return normalizePose(null);
   }
 
+  const ASL_SAMPLES = ['HI', 'HELLO', 'THANK YOU', 'HOW ARE YOU', 'BABY'];
+  const ISL_SAMPLES  = ['NAMASTE', 'A B C', '1 2 3', 'ONAM', 'INDIA'];
+
+  function updateSampleChips(samples) {
+    const chipsContainer = document.querySelector('.quick-samples');
+    if (!chipsContainer) return;
+    const chips = chipsContainer.querySelectorAll('.sample-chip');
+    chips.forEach((chip, idx) => {
+      if (samples[idx] !== undefined) {
+        chip.dataset.text = samples[idx];
+        chip.textContent  = samples[idx];
+        chip.style.display = '';
+      } else {
+        chip.style.display = 'none';
+      }
+    });
+  }
+
   // Dialect switch inside Practice
   if (btnPracAsl && btnPracIsl) {
     btnPracAsl.addEventListener('click', () => {
       practiceDialect = 'asl';
       btnPracAsl.classList.add('active');
       btnPracIsl.classList.remove('active');
+      updateSampleChips(ASL_SAMPLES);
       rebuildSequence(false);
       showToast('Practice dialect: ASL');
     });
@@ -1491,6 +1510,7 @@ function initPracticeStudio() {
       practiceDialect = 'isl';
       btnPracIsl.classList.add('active');
       btnPracAsl.classList.remove('active');
+      updateSampleChips(ISL_SAMPLES);
       rebuildSequence(false);
       showToast('Practice dialect: ISL');
     });
