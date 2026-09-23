@@ -1188,8 +1188,49 @@ function initSignGuide() {
     });
   }
 
+  const aslDescFallback = {
+    'A': 'Fist with thumb on side', 'B': 'All fingers together pointing up',
+    'C': 'Curved hand in C-shape', 'D': 'Index up, fingers curve to thumb',
+    'E': 'Fingers bent, thumb tucked', 'F': 'Index-thumb circle, three fingers up',
+    'G': 'Index and thumb point sideways', 'H': 'Two fingers point sideways',
+    'I': 'Pinky finger up', 'J': 'Pinky draws J in air',
+    'K': 'Index up, middle angled, thumb out', 'L': 'L-shape — thumb and index',
+    'M': 'Three fingers over thumb', 'N': 'Two fingers over thumb',
+    'O': 'All fingers curve to form O', 'P': 'K shape pointing down',
+    'Q': 'G shape pointing down', 'R': 'Two fingers crossed',
+    'S': 'Fist with thumb over fingers', 'T': 'Thumb between index and middle',
+    'U': 'Two fingers together pointing up', 'V': 'Two fingers spread in V',
+    'W': 'Three fingers spread out', 'X': 'Index finger hooks',
+    'Y': 'Thumb and pinky out', 'Z': 'Index draws Z in air'
+  };
+
+  function renderAslCards() {
+    const aslGrid = document.getElementById('asl-cards');
+    if (!aslGrid || aslGrid.children.length > 0) return; // render once
+    aslGrid.innerHTML = '';
+    const aslLetters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('');
+    aslLetters.forEach(letter => {
+      const desc = aslDescFallback[letter] || 'ASL hand sign';
+      const el = document.createElement('div');
+      el.className = 'guide-card';
+      el.title = `${letter}: ${desc}`;
+      el.innerHTML = `
+        <div class="guide-card-img-wrap">
+          <img src="asl_signs/${letter}.png" alt="ASL Sign ${letter}" loading="lazy" />
+        </div>
+        <div class="guide-card-body">
+          <span class="guide-card-char">${letter}</span>
+          <span class="guide-card-hands pill-amber pill-badge">1 Hand</span>
+        </div>
+        <p class="guide-card-desc" style="padding: 6px 10px 10px; font-size: 0.72rem; color: var(--text-dim); line-height: 1.35; margin: 0;">${desc}</p>
+      `;
+      aslGrid.appendChild(el);
+    });
+  }
+
   function openGuide() {
     renderGuideCards();
+    renderAslCards();
     if (panelGuide) {
       try {
         if (panelGuide.showPopover) {
