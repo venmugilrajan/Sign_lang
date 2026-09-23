@@ -47,12 +47,37 @@
   /* Motion. Feedback only, so short and flat. */
   --dur:      180ms;
   --dur-slow: 420ms;
-  --ease:     cubic-bezier(0.2, 0, 0, 1);
+  --ease:     cubic-bezier(0.2, 0, 1, 1);
 
   --focus: 0 0 0 2px var(--bg), 0 0 0 4px var(--accent);
 
   --font: "Geist", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
   --mono: "Geist Mono", ui-monospace, "SF Mono", "JetBrains Mono", monospace;
+}
+
+/* ── Light Mode Palette ──────────────────────────────────────────────── */
+:root[data-theme="light"],
+[data-theme="light"] {
+  --bg:          #f4f5f8;
+  --surface:     #ffffff;
+  --surface-2:   #eceef3;
+  --surface-3:   #e1e4ec;
+
+  --line:        #d5d8e2;
+  --line-bright: #b8bdcb;
+
+  --text:        #141518;
+  --text-dim:    #4e525d;
+  --text-mute:   #7d8291;
+
+  --accent:      #d97706;
+  --accent-soft: color-mix(in oklab, var(--accent) 14%, transparent);
+  --accent-line: color-mix(in oklab, var(--accent) 40%, transparent);
+  --accent-text: #92400e;
+
+  --danger:      #dc2626;
+  --danger-soft: color-mix(in oklab, var(--danger) 14%, transparent);
+  --danger-line: color-mix(in oklab, var(--danger) 38%, transparent);
 }
 
 /* Streak fill, registered so the dial can interpolate instead of jumping. */
@@ -64,7 +89,13 @@
 
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
-html { color-scheme: dark; }
+html {
+  color-scheme: dark;
+}
+
+html[data-theme="light"] {
+  color-scheme: light;
+}
 
 body {
   height: 100dvh;
@@ -1668,4 +1699,50 @@ kbd {
   object-fit: contain;
 }
 
+/* ── Light Mode Specific Polish & Theme Toggle ───────────────────────── */
+.theme-toggle-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 6px 10px;
+  min-width: 36px;
+  height: 32px;
+  cursor: pointer;
+  border-radius: var(--r-ctrl);
+  border: 1px solid var(--line);
+  background: var(--surface-2);
+  color: var(--text);
+  font-size: 0.95rem;
+  line-height: 1;
+  transition: all var(--dur) var(--ease);
+}
+.theme-toggle-btn:hover {
+  background: var(--surface-3);
+  border-color: var(--line-bright);
+  transform: translateY(-1px);
+}
+.theme-toggle-btn:active {
+  transform: scale(0.95);
+}
 
+[data-theme="light"] .mode-btn.active {
+  color: #ffffff;
+}
+
+[data-theme="light"] .avatar-viewport {
+  background: #eaedf4;
+}
+
+[data-theme="light"] .guide-card-img-wrap,
+[data-theme="light"] .asl-chart-wrap {
+  background: #f1f3f8;
+}
+
+[data-theme="light"] .topbar {
+  background: #ffffff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+}
+
+[data-theme="light"] .sheet {
+  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.12), 0 2px 8px rgba(0, 0, 0, 0.06);
+}

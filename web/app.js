@@ -1005,14 +1005,6 @@ function setupControls() {
   }
 
   btnAsl.addEventListener('click', () => {
-    if (isInVisuallyMode()) {
-      // Stay in Practice Studio, just switch dialect to ASL
-      const btnPracAsl = document.getElementById('btn-practice-asl');
-      const btnPracIsl = document.getElementById('btn-practice-isl');
-      if (btnPracAsl) btnPracAsl.click();
-      showToast('Practice dialect: ASL');
-      return;
-    }
     currentMode = 'asl';
     currentWeights = aslWeights;
     btnAsl.classList.add('active');
@@ -1022,17 +1014,10 @@ function setupControls() {
     if (liveWorkspace) liveWorkspace.classList.remove('hidden');
     if (visuallyWorkspace) visuallyWorkspace.classList.add('hidden');
     resetStreak();
-    showToast('Switched to ASL');
+    showToast('Switched to ASL (Live Camera)');
   });
 
   btnIsl.addEventListener('click', () => {
-    if (isInVisuallyMode()) {
-      // Stay in Practice Studio, just switch dialect to ISL
-      const btnPracIsl = document.getElementById('btn-practice-isl');
-      if (btnPracIsl) btnPracIsl.click();
-      showToast('Practice dialect: ISL');
-      return;
-    }
     currentMode = 'isl';
     currentWeights = islWeights;
     btnIsl.classList.add('active');
@@ -1043,7 +1028,7 @@ function setupControls() {
     if (liveWorkspace) liveWorkspace.classList.remove('hidden');
     if (visuallyWorkspace) visuallyWorkspace.classList.add('hidden');
     resetStreak();
-    showToast('Switched to ISL');
+    showToast('Switched to ISL (Live Camera)');
   });
 
   if (btnVisually) {
@@ -1094,6 +1079,40 @@ function setupControls() {
       const sec = Number(setTimeoutInput.value);
       SPACE_FRAMES = Math.round(sec * 30);
       outTimeout.value = `${sec.toFixed(1)}s`;
+    });
+  }
+
+  // Theme Toggle (Light / Dark Mode)
+  const btnThemeToggle = document.getElementById('btn-theme-toggle');
+  const iconThemeToggle = document.getElementById('theme-toggle-icon');
+
+  function applyTheme(theme) {
+    const isLight = theme === 'light';
+    document.documentElement.setAttribute('data-theme', isLight ? 'light' : 'dark');
+    localStorage.setItem('signlens_theme', isLight ? 'light' : 'dark');
+    if (iconThemeToggle) {
+      iconThemeToggle.textContent = isLight ? '🌙' : '☀️';
+    }
+    if (btnThemeToggle) {
+      btnThemeToggle.setAttribute('title', isLight ? 'Switch to Dark Mode' : 'Switch to Light Mode');
+      btnThemeToggle.setAttribute('aria-label', isLight ? 'Switch to Dark Mode' : 'Switch to Light Mode');
+    }
+    // Re-render avatar if in practice mode so canvas background updates immediately
+    if (typeof drawAvatar === 'function') {
+      try { drawAvatar(); } catch (_) {}
+    }
+  }
+
+  // Load saved preference or fallback to dark
+  const savedTheme = localStorage.getItem('signlens_theme') || 'dark';
+  applyTheme(savedTheme);
+
+  if (btnThemeToggle) {
+    btnThemeToggle.addEventListener('click', () => {
+      const currentTheme = document.documentElement.getAttribute('data-theme') || 'dark';
+      const nextTheme = currentTheme === 'light' ? 'dark' : 'light';
+      applyTheme(nextTheme);
+      showToast(nextTheme === 'light' ? '☀️ Switched to Light Mode' : '🌙 Switched to Dark Mode');
     });
   }
 
@@ -2044,8 +2063,9 @@ function initPracticeStudio() {
     ctx.save();
     ctx.clearRect(0, 0, w, h);
 
-    // 1. Clean sleek dark studio background
-    ctx.fillStyle = '#161619';
+    // 1. Studio background (theme-aware)
+    const isLight = document.documentElement.getAttribute('data-theme') === 'light';
+    ctx.fillStyle = isLight ? '#eaedf4' : '#161619';
     ctx.fillRect(0, 0, w, h);
 
     // 2. Stylized Red Silhouette Avatar (Head, Face, Torso, Arms - matching RyloTranslate)
