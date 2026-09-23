@@ -1000,7 +1000,19 @@ function setupControls() {
   const liveWorkspace = document.getElementById('live-workspace');
   const visuallyWorkspace = document.getElementById('visually-workspace');
 
+  function isInVisuallyMode() {
+    return visuallyWorkspace && !visuallyWorkspace.classList.contains('hidden');
+  }
+
   btnAsl.addEventListener('click', () => {
+    if (isInVisuallyMode()) {
+      // Stay in Practice Studio, just switch dialect to ASL
+      const btnPracAsl = document.getElementById('btn-practice-asl');
+      const btnPracIsl = document.getElementById('btn-practice-isl');
+      if (btnPracAsl) btnPracAsl.click();
+      showToast('Practice dialect: ASL');
+      return;
+    }
     currentMode = 'asl';
     currentWeights = aslWeights;
     btnAsl.classList.add('active');
@@ -1014,6 +1026,13 @@ function setupControls() {
   });
 
   btnIsl.addEventListener('click', () => {
+    if (isInVisuallyMode()) {
+      // Stay in Practice Studio, just switch dialect to ISL
+      const btnPracIsl = document.getElementById('btn-practice-isl');
+      if (btnPracIsl) btnPracIsl.click();
+      showToast('Practice dialect: ISL');
+      return;
+    }
     currentMode = 'isl';
     currentWeights = islWeights;
     btnIsl.classList.add('active');
