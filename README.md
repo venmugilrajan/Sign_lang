@@ -7,7 +7,7 @@ A production-grade, real-time American Sign Language (ASL) and Indian Sign Langu
 ## 📖 Sign Language Reference Charts
 
 ### 🇺🇸 American Sign Language (ASL)
-![ASL Alphabet Chart](ASL_Alphabet_Chart.png) 
+![ASL Hand Signs Official](ASL_Hand_Signs_Official.png) 
 
 ### 🇮🇳 Indian Sign Language (ISL - Dual Hand)
 ![ISL Hand Signs Official](ISL_Hand_Signs_Official.png)
