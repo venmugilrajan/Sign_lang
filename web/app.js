@@ -1286,11 +1286,11 @@ function initSignGuide() {
         if (panelGuide.showPopover) {
           panelGuide.showPopover();
         } else {
-          panelGuide.style.display = 'block';
+          panelGuide.style.display = 'flex';
           panelGuide.classList.add('open');
         }
       } catch (err) {
-        panelGuide.style.display = 'block';
+        panelGuide.style.display = 'flex';
         panelGuide.classList.add('open');
       }
     }
@@ -1310,6 +1310,30 @@ function initSignGuide() {
         panelGuide.classList.remove('open');
       }
     }
+  }
+
+  if (panelGuide) {
+    // Synchronize inline display style with popover state
+    panelGuide.addEventListener('toggle', (e) => {
+      if (e.newState === 'open') {
+        panelGuide.style.display = 'flex';
+        panelGuide.classList.add('open');
+      } else {
+        panelGuide.style.display = 'none';
+        panelGuide.classList.remove('open');
+      }
+    });
+    // Ensure it starts closed and strictly hidden
+    panelGuide.style.display = 'none';
+    panelGuide.classList.remove('open');
+  }
+
+  const stageGuideBtn = document.getElementById('stage-guide-btn');
+  if (stageGuideBtn) {
+    stageGuideBtn.addEventListener('click', (e) => {
+      e.preventDefault();
+      openGuide();
+    });
   }
 
   if (btnOpenGuide) {
@@ -1439,7 +1463,6 @@ function initSignGuide() {
 
   window._renderGuideCards = renderGuideCards;
   window._openSignGuide = openGuide;
-  renderGuideCards();
 }
 
 // ── Startup ──────────────────────────────────────────────────────────────────
@@ -1562,7 +1585,10 @@ function initPracticeStudio() {
       // Set initial pose
       practiceCurrentPose = clonePose(getTemplatePose('REST'));
       drawAvatar();
-      if (window._renderGuideCards) window._renderGuideCards();
+      const panelGuide = document.getElementById('panel-guide');
+      if (panelGuide && (panelGuide.matches(':popover-open') || panelGuide.classList.contains('open'))) {
+        if (window._renderGuideCards) window._renderGuideCards();
+      }
     })
     .catch(err => {
       console.warn('[PracticeStudio] Failed to load sign_templates.json:', err);

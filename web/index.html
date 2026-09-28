@@ -9,7 +9,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600;700&family=Geist+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="style.css?v=11" />
+  <link rel="stylesheet" href="style.css?v=12" />
 
   <!-- MediaPipe Tasks Vision loaded dynamically inside app.js initMediaPipe() -->
 </head>
@@ -242,7 +242,7 @@
 </section>
 
 <!-- ══ SETTINGS (top layer) ═════════════════════════════════════════════ -->
-<div popover id="panel-settings" class="sheet">
+<div popover id="panel-settings" class="sheet" style="display: none;">
   <header class="sheet-head">
     <h2 class="sheet-title">Detection</h2>
     <button class="ghost-btn" popovertarget="panel-settings" popovertargetaction="hide">Close</button>
@@ -277,7 +277,7 @@
 </div>
 
 <!-- ══ SHORTCUTS (top layer) ════════════════════════════════════════════ -->
-<div popover id="panel-help" class="sheet">
+<div popover id="panel-help" class="sheet" style="display: none;">
   <header class="sheet-head">
     <h2 class="sheet-title">How it works</h2>
     <button class="ghost-btn" popovertarget="panel-help" popovertargetaction="hide">Close</button>
@@ -300,7 +300,7 @@
 </div>
 
 <!-- ══ SIGN REFERENCE GUIDE (top layer modal) ═══════════════════════════ -->
-<div popover id="panel-guide" class="sheet sheet-wide">
+<div popover id="panel-guide" class="sheet sheet-wide" style="display: none;">
   <header class="sheet-head">
     <div class="sheet-title-group">
       <h2 class="sheet-title">Sign Reference Guide</h2>
@@ -373,6 +373,6 @@
 </dialog>
 
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
-<script src="app.js?v=17"></script>
+<script src="app.js?v=18"></script>
 </body>
 </html>
