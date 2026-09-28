@@ -1614,6 +1614,30 @@ function initPracticeStudio() {
   const hudStatus = document.getElementById('avatar-hud-status');
   const avatarStatusText = document.getElementById('avatar-status-text');
 
+  // Top-Right Sign Gesture Image Preview Reference
+  const signPreviewWrap = document.getElementById('avatar-sign-preview');
+  const signPreviewImg = document.getElementById('avatar-sign-img');
+  const signPreviewBadge = document.getElementById('avatar-sign-badge');
+  const signPreviewChar = document.getElementById('avatar-sign-char');
+  const signPreviewHands = document.getElementById('avatar-sign-hands');
+  const signPreviewDesc = document.getElementById('avatar-sign-desc');
+
+  if (signPreviewWrap) {
+    signPreviewWrap.addEventListener('click', () => {
+      if (signPreviewImg && signPreviewImg.dataset.letter) {
+        if (typeof openSignLightbox === 'function') {
+          openSignLightbox({
+            letter: signPreviewImg.dataset.letter,
+            hands: signPreviewImg.dataset.hands || '1',
+            desc: signPreviewImg.dataset.desc || '',
+            lang: signPreviewImg.dataset.lang || 'ISL',
+            imgSrc: signPreviewImg.src
+          });
+        }
+      }
+    });
+  }
+
   const btnPrev = document.getElementById('btn-avatar-prev');
   const btnPlayPause = document.getElementById('btn-avatar-playpause');
   const btnNext = document.getElementById('btn-avatar-next');
@@ -1890,6 +1914,7 @@ function initPracticeStudio() {
       if (hudCue) { hudCue.style.display = 'none'; hudCue.textContent = ''; }
       if (avatarStatusText) avatarStatusText.textContent = 'Ready';
       if (hudStatus) hudStatus.classList.remove('playing');
+      if (signPreviewWrap) signPreviewWrap.style.display = 'none';
       return;
     }
 
@@ -1929,10 +1954,26 @@ function initPracticeStudio() {
       else hudStatus.classList.remove('playing');
     }
 
-    // Real human photo reference card preview (if present)
-    const photoRef = document.getElementById('avatar-photo-ref');
-    if (photoRef) {
-      photoRef.remove();
+    // Update Top-Right Sign Gesture Image Preview Reference
+    if (signPreviewWrap) {
+      if (currChar && currChar !== ' ') {
+        const lang = (practiceDialect || 'isl').toLowerCase();
+        const imgSrc = (lang === 'asl') ? `asl_signs/${currChar}.png` : `isl_signs/${currChar}.png`;
+        if (signPreviewImg) {
+          signPreviewImg.src = imgSrc;
+          signPreviewImg.dataset.letter = currChar;
+          signPreviewImg.dataset.hands = is2H ? '2' : '1';
+          signPreviewImg.dataset.desc = desc || '';
+          signPreviewImg.dataset.lang = lang.toUpperCase();
+        }
+        if (signPreviewBadge) signPreviewBadge.textContent = lang.toUpperCase();
+        if (signPreviewChar) signPreviewChar.textContent = `Sign: ${currChar}`;
+        if (signPreviewHands) signPreviewHands.textContent = is2H ? '2 Hands' : '1 Hand';
+        if (signPreviewDesc) signPreviewDesc.textContent = desc || (is2H ? 'Dual-hand gesture' : 'Single-hand gesture');
+        signPreviewWrap.style.display = 'flex';
+      } else {
+        signPreviewWrap.style.display = 'none';
+      }
     }
   }
 
