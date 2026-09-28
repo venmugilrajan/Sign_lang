@@ -33,3 +33,4 @@ models/*_cache.pkl
 temp_drawing_media/
 test_fig.png
 hf_export/*.pkl
+hf_space/
