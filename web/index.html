@@ -9,7 +9,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600;700&family=Geist+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="style.css?v=5" />
+  <link rel="stylesheet" href="style.css?v=8" />
 
   <!-- MediaPipe Tasks Vision loaded dynamically inside app.js initMediaPipe() -->
 </head>
@@ -367,7 +367,21 @@
   </div>
 </div>
 
+<!-- ══ SIGN GUIDE LIGHTBOX POPUP (Top-layer native dialog) ════════════════════════ -->
+<dialog class="sign-lightbox-dialog" id="sign-lightbox-overlay">
+  <div class="sign-lightbox" id="sign-lightbox">
+    <button class="sign-lightbox-close" id="sign-lightbox-close" aria-label="Close preview">&times;</button>
+    <div class="sign-lightbox-img-wrap">
+      <img id="sign-lightbox-img" src="" alt="Sign preview" />
+    </div>
+    <div class="sign-lightbox-letter" id="sign-lightbox-letter"></div>
+    <span class="sign-lightbox-type" id="sign-lightbox-type"></span>
+    <p class="sign-lightbox-desc" id="sign-lightbox-desc"></p>
+    <div class="sign-lightbox-lang" id="sign-lightbox-lang"></div>
+  </div>
+</dialog>
+
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
-<script src="app.js?v=13"></script>
+<script src="app.js?v=15"></script>
 </body>
 </html>

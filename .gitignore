@@ -28,3 +28,7 @@ Thumbs.db
 *.leaky-bak
 *.cpu-partial-epoch1
 models/*_cache.pkl
+# Temporary / Scratch
+~$*.docx
+temp_drawing_media/
+test_fig.png

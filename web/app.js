@@ -1192,7 +1192,12 @@ function initSignGuide() {
   function createGuideCard(letter, isTwoHanded, desc) {
     const el = document.createElement('div');
     el.className = 'guide-card';
-    el.title = `${letter}: ${desc}`;
+    el.title = `${letter}: ${desc} (click to enlarge)`;
+    el.dataset.letter = letter;
+    el.dataset.hands = isTwoHanded ? '2' : '1';
+    el.dataset.desc = desc;
+    el.dataset.lang = 'ISL';
+    el.dataset.imgSrc = `isl_signs/${letter}.png`;
     el.innerHTML = `
       <div class="guide-card-img-wrap">
         <img src="isl_signs/${letter}.png" alt="Sign ${letter}" loading="lazy" />
@@ -1203,6 +1208,7 @@ function initSignGuide() {
       </div>
       <p class="guide-card-desc" style="padding: 6px 10px 10px; font-size: 0.72rem; color: var(--text-dim); line-height: 1.35; margin: 0;">${desc}</p>
     `;
+    el.addEventListener('click', () => openSignLightbox(el));
     return el;
   }
 
@@ -1251,7 +1257,12 @@ function initSignGuide() {
       const desc = aslDescFallback[letter] || 'ASL hand sign';
       const el = document.createElement('div');
       el.className = 'guide-card';
-      el.title = `${letter}: ${desc}`;
+      el.title = `${letter}: ${desc} (click to enlarge)`;
+      el.dataset.letter = letter;
+      el.dataset.hands = '1';
+      el.dataset.desc = desc;
+      el.dataset.lang = 'ASL';
+      el.dataset.imgSrc = `asl_signs/${letter}.png`;
       el.innerHTML = `
         <div class="guide-card-img-wrap">
           <img src="asl_signs/${letter}.png" alt="ASL Sign ${letter}" loading="lazy" />
@@ -1262,6 +1273,7 @@ function initSignGuide() {
         </div>
         <p class="guide-card-desc" style="padding: 6px 10px 10px; font-size: 0.72rem; color: var(--text-dim); line-height: 1.35; margin: 0;">${desc}</p>
       `;
+      el.addEventListener('click', () => openSignLightbox(el));
       aslGrid.appendChild(el);
     });
   }
@@ -1333,6 +1345,97 @@ function initSignGuide() {
       contentIsl.classList.add('hidden');
     });
   }
+
+  // ── Sign Lightbox popup ─────────────────────────────────────────────────
+  const lightboxOverlay = document.getElementById('sign-lightbox-overlay');
+  const lightboxImg = document.getElementById('sign-lightbox-img');
+  const lightboxLetter = document.getElementById('sign-lightbox-letter');
+  const lightboxType = document.getElementById('sign-lightbox-type');
+  const lightboxDesc = document.getElementById('sign-lightbox-desc');
+  const lightboxLang = document.getElementById('sign-lightbox-lang');
+  const lightboxCloseBtn = document.getElementById('sign-lightbox-close');
+
+  function openSignLightbox(dataOrEl) {
+    if (!lightboxOverlay) return;
+
+    let letter = '?';
+    let hands = '1';
+    let desc = '';
+    let lang = 'ISL';
+    let imgSrc = '';
+
+    if (dataOrEl instanceof HTMLElement) {
+      letter = dataOrEl.dataset.letter || '?';
+      hands = dataOrEl.dataset.hands || '1';
+      desc = dataOrEl.dataset.desc || '';
+      lang = dataOrEl.dataset.lang || 'ISL';
+      imgSrc = dataOrEl.dataset.imgSrc || '';
+    } else if (typeof dataOrEl === 'object' && dataOrEl !== null) {
+      letter = dataOrEl.letter || '?';
+      hands = String(dataOrEl.hands || '1');
+      desc = dataOrEl.desc || '';
+      lang = dataOrEl.lang || 'ISL';
+      imgSrc = dataOrEl.imgSrc || '';
+    }
+
+    if (lightboxImg) lightboxImg.src = imgSrc;
+    if (lightboxLetter) lightboxLetter.textContent = `Sign: ${letter}`;
+    if (lightboxType) {
+      const isTwoHand = hands === '2';
+      lightboxType.textContent = isTwoHand ? '✌️ 2 Hands Required' : '🤚 1 Hand Only';
+      lightboxType.className = `sign-lightbox-type ${isTwoHand ? 'two-hand' : 'one-hand'}`;
+    }
+    if (lightboxDesc) lightboxDesc.textContent = desc;
+    if (lightboxLang) lightboxLang.textContent = (lang.toUpperCase() === 'ASL') ? '🇺🇸 American Sign Language (ASL)' : '🇮🇳 Indian Sign Language (ISL)';
+
+    // Open natively in the browser Top Layer (above all popovers and dialogs)
+    if (typeof lightboxOverlay.showModal === 'function') {
+      if (!lightboxOverlay.open) {
+        lightboxOverlay.showModal();
+      }
+    } else {
+      lightboxOverlay.setAttribute('open', '');
+    }
+  }
+
+  function closeSignLightbox() {
+    if (!lightboxOverlay) return;
+    if (typeof lightboxOverlay.close === 'function') {
+      if (lightboxOverlay.open) {
+        lightboxOverlay.close();
+      }
+    } else {
+      lightboxOverlay.removeAttribute('open');
+    }
+  }
+
+  // Make openSignLightbox available globally for card click handlers
+  window.openSignLightbox = openSignLightbox;
+
+  // Close button
+  if (lightboxCloseBtn) {
+    lightboxCloseBtn.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      closeSignLightbox();
+    });
+  }
+
+  // Click outside (on backdrop) to close dialog
+  if (lightboxOverlay) {
+    lightboxOverlay.addEventListener('click', (e) => {
+      if (e.target === lightboxOverlay) {
+        closeSignLightbox();
+      }
+    });
+  }
+
+  // ESC key natively closes <dialog>, but add safety handler
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && lightboxOverlay && lightboxOverlay.open) {
+      closeSignLightbox();
+    }
+  });
 
   window._renderGuideCards = renderGuideCards;
   window._openSignGuide = openGuide;
@@ -1800,7 +1903,7 @@ function initPracticeStudio() {
       else hudStatus.classList.remove('playing');
     }
 
-    // Real human photo reference card preview (both ASL & ISL)
+    // Real human photo reference card preview (both ASL & ISL) - clickable to open lightbox
     const photoRef = document.getElementById('avatar-photo-ref');
     const photoImg = document.getElementById('avatar-photo-img');
     const photoHeader = document.getElementById('avatar-photo-header');
@@ -1808,12 +1911,30 @@ function initPracticeStudio() {
     if (photoRef && photoImg) {
       if (currChar && currChar !== ' ') {
         const isISL = practiceDialect === 'isl';
-        photoImg.src = isISL ? `isl_signs/${currChar}.png` : `asl_signs/${currChar}.png`;
-        if (photoHeader) photoHeader.textContent = `${practiceDialect.toUpperCase()}: ${currChar}`;
+        const imgSrc = isISL ? `isl_signs/${currChar}.png` : `asl_signs/${currChar}.png`;
+        photoImg.src = imgSrc;
+        if (photoHeader) photoHeader.innerHTML = `<span>${practiceDialect.toUpperCase()}: ${currChar}</span> <span style="font-size:0.65rem;opacity:0.8;">🔍</span>`;
         if (photoType) photoType.textContent = isISL ? (is2H ? '2-Hands' : '1-Hand') : '1-Hand';
+        photoRef.title = `Click to zoom Sign: ${currChar} in lightbox`;
         photoRef.style.display = 'flex';
+
+        // Attach click handler to enlarge in lightbox
+        photoRef.onclick = (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          if (typeof window.openSignLightbox === 'function') {
+            window.openSignLightbox({
+              letter: currChar,
+              hands: is2H ? '2' : '1',
+              desc: desc || '',
+              lang: isISL ? 'ISL' : 'ASL',
+              imgSrc: imgSrc
+            });
+          }
+        };
       } else {
         photoRef.style.display = 'none';
+        photoRef.onclick = null;
       }
     }
   }
