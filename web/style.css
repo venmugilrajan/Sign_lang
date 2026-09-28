@@ -1465,7 +1465,28 @@ kbd {
 }
 
 /* Practice Studio Real Human Photo Preview Card (Clickable to enlarge) */
-.visually-workspace .avatar-photo-ref {
+/* Disable native browser drag-and-drop ghost image artifacts globally on images and cards */
+img, .guide-card, .avatar-photo-ref, .sign-lightbox, canvas {
+  -webkit-user-drag: none;
+  -khtml-user-drag: none;
+  -moz-user-drag: none;
+  -o-user-drag: none;
+  user-drag: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+/* Practice Studio Real Human Photo Preview Card - STRICTLY hidden by default */
+#avatar-photo-ref,
+.avatar-photo-ref {
+  display: none !important;
+  visibility: hidden !important;
+  pointer-events: none !important;
+}
+
+/* Only display when explicitly active inside the Visually Practice Workspace */
+.visually-workspace:not(.hidden) #avatar-photo-ref,
+.visually-workspace:not(.hidden) .avatar-photo-ref {
   position: absolute;
   top: 16px;
   right: 16px;
@@ -1475,7 +1496,9 @@ kbd {
   border-radius: 10px;
   overflow: hidden;
   box-shadow: 0 10px 25px rgba(0, 0, 0, 0.5);
-  display: flex;
+  display: flex !important;
+  visibility: visible !important;
+  pointer-events: auto !important;
   flex-direction: column;
   z-index: 10;
   cursor: pointer;
@@ -1483,24 +1506,22 @@ kbd {
   transition: transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1), border-color 0.2s ease, box-shadow 0.2s ease;
   animation: photoFadeIn 0.25s ease-out;
 }
-.visually-workspace .avatar-photo-ref:hover {
+
+.visually-workspace:not(.hidden) .avatar-photo-ref:hover {
   transform: scale(1.06) translateY(-2px);
   border-color: var(--accent);
   box-shadow: 0 14px 30px rgba(0, 0, 0, 0.65), 0 0 15px color-mix(in oklab, var(--accent) 35%, transparent);
 }
-.visually-workspace .avatar-photo-ref:active {
+
+.visually-workspace:not(.hidden) .avatar-photo-ref:active {
   transform: scale(0.98);
 }
-#live-workspace .avatar-photo-ref,
-.hidden .avatar-photo-ref {
-  display: none !important;
-  visibility: hidden !important;
-  pointer-events: none !important;
-}
+
 @keyframes photoFadeIn {
   from { opacity: 0; transform: scale(0.95); }
   to { opacity: 1; transform: scale(1); }
 }
+
 .avatar-photo-header {
   padding: 4px 6px;
   background: var(--surface-3);

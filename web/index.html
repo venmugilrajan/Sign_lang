@@ -9,7 +9,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600;700&family=Geist+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="style.css?v=10" />
+  <link rel="stylesheet" href="style.css?v=11" />
 
   <!-- MediaPipe Tasks Vision loaded dynamically inside app.js initMediaPipe() -->
 </head>
@@ -227,9 +227,9 @@
       </div>
 
       <!-- Real Human Sign Reference Preview -->
-      <div class="avatar-photo-ref" id="avatar-photo-ref" style="display: none;">
+      <div class="avatar-photo-ref" id="avatar-photo-ref" style="display: none;" draggable="false">
         <div class="avatar-photo-header" id="avatar-photo-header">ISL: A</div>
-        <img id="avatar-photo-img" src="" alt="Real Sign Reference" />
+        <img id="avatar-photo-img" src="" alt="Real Sign Reference" draggable="false" />
         <div class="avatar-photo-meta">
           <span class="avatar-photo-tag" id="avatar-photo-tag">Photo Ref</span>
           <span class="avatar-photo-type" id="avatar-photo-type">2-Hand</span>
@@ -382,6 +382,6 @@
 </dialog>
 
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
-<script src="app.js?v=16"></script>
+<script src="app.js?v=17"></script>
 </body>
 </html>

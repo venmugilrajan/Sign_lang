@@ -1013,6 +1013,8 @@ function setupControls() {
     modeToggle.classList.remove('isl-mode', 'visually-mode');
     if (liveWorkspace) liveWorkspace.classList.remove('hidden');
     if (visuallyWorkspace) visuallyWorkspace.classList.add('hidden');
+    const photoRef = document.getElementById('avatar-photo-ref');
+    if (photoRef) photoRef.style.display = 'none';
     resetStreak();
     showToast('Switched to ASL (Live Camera)');
   });
@@ -1027,6 +1029,8 @@ function setupControls() {
     modeToggle.classList.add('isl-mode');
     if (liveWorkspace) liveWorkspace.classList.remove('hidden');
     if (visuallyWorkspace) visuallyWorkspace.classList.add('hidden');
+    const photoRef = document.getElementById('avatar-photo-ref');
+    if (photoRef) photoRef.style.display = 'none';
     resetStreak();
     showToast('Switched to ISL (Live Camera)');
   });
@@ -1441,6 +1445,12 @@ function initSignGuide() {
   window._openSignGuide = openGuide;
   renderGuideCards();
 }
+
+// Global drag prevention: prevent browser from generating native ghost-drag previews of DOM images/cards
+window.addEventListener('dragstart', (e) => {
+  e.preventDefault();
+  return false;
+}, false);
 
 // ── Startup ──────────────────────────────────────────────────────────────────
 window.addEventListener('DOMContentLoaded', async () => {
