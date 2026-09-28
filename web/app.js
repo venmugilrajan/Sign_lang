@@ -1909,7 +1909,8 @@ function initPracticeStudio() {
     const photoHeader = document.getElementById('avatar-photo-header');
     const photoType = document.getElementById('avatar-photo-type');
     if (photoRef && photoImg) {
-      if (currChar && currChar !== ' ') {
+      const inVisually = isInVisuallyMode();
+      if (inVisually && currChar && currChar !== ' ') {
         const isISL = practiceDialect === 'isl';
         const imgSrc = isISL ? `isl_signs/${currChar}.png` : `asl_signs/${currChar}.png`;
         photoImg.src = imgSrc;
