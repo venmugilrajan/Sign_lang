@@ -731,7 +731,7 @@ function adaptResults(result) {
     // Rejects facial false positives while fully supporting profile/curled hand signs like 'O', 'C', 'E', 'S'
     const palmLen = Math.hypot(lms[9].x - lms[0].x, lms[9].y - lms[0].y);
     const totalSpan = Math.max(...lms.map(p => Math.hypot(p.x - lms[0].x, p.y - lms[0].y)));
-    if (palmLen < 0.04 || totalSpan < 0.08) {
+    if (palmLen < 0.03 || totalSpan < 0.06) {
       continue;
     }
 
@@ -778,9 +778,9 @@ async function initMediaPipe() {
     },
     runningMode:   'VIDEO',
     numHands:      2,
-    minHandDetectionConfidence: 0.40,
-    minHandPresenceConfidence:  0.40,
-    minTrackingConfidence:      0.40,
+    minHandDetectionConfidence: 0.25,
+    minHandPresenceConfidence:  0.25,
+    minTrackingConfidence:      0.25,
   });
 
   // Start camera stream
@@ -1170,7 +1170,7 @@ function initSignGuide() {
     'A': 'Dominant index finger touching non-dominant thumb tip',
     'B': 'Both hands forming double circles / glasses pose',
     'D': 'Dominant index pointing to non-dominant index forming D',
-    'E': 'Dominant index touching non-dominant index tip',
+    'E': 'Left hand curved C/horizontal, right index touching middle knuckle',
     'F': 'Dominant index and middle crossing non-dominant index and middle',
     'G': 'Both fists held together vertically with knuckles facing forward',
     'H': 'Dominant open palm sweeping flat across non-dominant palm',
