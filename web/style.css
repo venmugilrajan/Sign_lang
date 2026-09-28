@@ -1796,7 +1796,7 @@ dialog.sign-lightbox-dialog {
   height: 100vh;
   position: fixed;
   inset: 0;
-  display: flex;
+  display: none;
   align-items: center;
   justify-content: center;
   z-index: 2147483647;
@@ -1805,9 +1805,17 @@ dialog.sign-lightbox-dialog {
   transition: opacity 0.25s ease, transform 0.25s ease;
 }
 
+dialog.sign-lightbox-dialog:not([open]) {
+  display: none !important;
+  pointer-events: none !important;
+  visibility: hidden !important;
+}
+
 dialog.sign-lightbox-dialog[open] {
+  display: flex !important;
   opacity: 1;
   pointer-events: auto;
+  visibility: visible !important;
 }
 
 dialog.sign-lightbox-dialog::backdrop {
