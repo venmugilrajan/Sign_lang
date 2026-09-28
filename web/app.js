@@ -1013,8 +1013,6 @@ function setupControls() {
     modeToggle.classList.remove('isl-mode', 'visually-mode');
     if (liveWorkspace) liveWorkspace.classList.remove('hidden');
     if (visuallyWorkspace) visuallyWorkspace.classList.add('hidden');
-    const photoRef = document.getElementById('avatar-photo-ref');
-    if (photoRef) photoRef.style.display = 'none';
     resetStreak();
     showToast('Switched to ASL (Live Camera)');
   });
@@ -1029,8 +1027,6 @@ function setupControls() {
     modeToggle.classList.add('isl-mode');
     if (liveWorkspace) liveWorkspace.classList.remove('hidden');
     if (visuallyWorkspace) visuallyWorkspace.classList.add('hidden');
-    const photoRef = document.getElementById('avatar-photo-ref');
-    if (photoRef) photoRef.style.display = 'none';
     resetStreak();
     showToast('Switched to ISL (Live Camera)');
   });
@@ -1445,12 +1441,6 @@ function initSignGuide() {
   window._openSignGuide = openGuide;
   renderGuideCards();
 }
-
-// Global drag prevention: prevent browser from generating native ghost-drag previews of DOM images/cards
-window.addEventListener('dragstart', (e) => {
-  e.preventDefault();
-  return false;
-}, false);
 
 // ── Startup ──────────────────────────────────────────────────────────────────
 window.addEventListener('DOMContentLoaded', async () => {
@@ -1913,40 +1903,10 @@ function initPracticeStudio() {
       else hudStatus.classList.remove('playing');
     }
 
-    // Real human photo reference card preview (both ASL & ISL) - clickable to open lightbox
+    // Real human photo reference card preview (if present)
     const photoRef = document.getElementById('avatar-photo-ref');
-    const photoImg = document.getElementById('avatar-photo-img');
-    const photoHeader = document.getElementById('avatar-photo-header');
-    const photoType = document.getElementById('avatar-photo-type');
-    if (photoRef && photoImg) {
-      const inVisually = isInVisuallyMode();
-      if (inVisually && currChar && currChar !== ' ') {
-        const isISL = practiceDialect === 'isl';
-        const imgSrc = isISL ? `isl_signs/${currChar}.png` : `asl_signs/${currChar}.png`;
-        photoImg.src = imgSrc;
-        if (photoHeader) photoHeader.innerHTML = `<span>${practiceDialect.toUpperCase()}: ${currChar}</span> <span style="font-size:0.65rem;opacity:0.8;">🔍</span>`;
-        if (photoType) photoType.textContent = isISL ? (is2H ? '2-Hands' : '1-Hand') : '1-Hand';
-        photoRef.title = `Click to zoom Sign: ${currChar} in lightbox`;
-        photoRef.style.display = 'flex';
-
-        // Attach click handler to enlarge in lightbox
-        photoRef.onclick = (e) => {
-          e.preventDefault();
-          e.stopPropagation();
-          if (typeof window.openSignLightbox === 'function') {
-            window.openSignLightbox({
-              letter: currChar,
-              hands: is2H ? '2' : '1',
-              desc: desc || '',
-              lang: isISL ? 'ISL' : 'ASL',
-              imgSrc: imgSrc
-            });
-          }
-        };
-      } else {
-        photoRef.style.display = 'none';
-        photoRef.onclick = null;
-      }
+    if (photoRef) {
+      photoRef.remove();
     }
   }
 
