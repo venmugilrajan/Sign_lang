@@ -176,7 +176,7 @@ In computer vision, high accuracy on sign language often raises concerns about o
 | **ASL Single-Hand**| American Sign Language (ASL) | **28 Classes** (`A–Z`, `del`, `space`)| **78-D** (Invariant to scale & orientation) | MLP `(256, 128, 64)` ReLU | **100.0%** (Raw split) / **~95%** (Cross-session) | `asl_landmark_model.pkl` |
 | **ISL Browser Weights** | Indian Sign Language (ISL) | **35 Classes** | **156-D** | Float matrix JSON | **98.05%** | `isl_landmarks_weights.json` |
 
-### Train vs. Test Accuracy Benchmark Comparison
+### Train vs. Test 
 
 | Metric | ISL Model (Dual-Hand) | ASL Model (Single-Hand) |
 | :--- | :---: | :---: |
