@@ -9,7 +9,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600;700&family=Geist+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="style.css?v=17" />
+  <link rel="stylesheet" href="style.css?v=18" />
 
   <!-- MediaPipe Tasks Vision loaded dynamically inside app.js initMediaPipe() -->
 </head>
@@ -32,6 +32,7 @@
     <button class="mode-btn active" data-mode="asl" id="btn-asl" aria-pressed="true">ASL</button>
     <button class="mode-btn" data-mode="isl" id="btn-isl" aria-pressed="false">ISL</button>
     <button class="mode-btn" data-mode="visually" id="btn-visually" aria-pressed="false">VISUALLY</button>
+    <button class="mode-btn" data-mode="upload" id="btn-upload" aria-pressed="false">UPLOAD</button>
     <span class="mode-slider" aria-hidden="true"></span>
   </div>
 
@@ -256,6 +257,104 @@
   </section>
 </section>
 
+<!-- ══ UPLOAD (IMAGE SIGN RECOGNITION STUDIO) ════════════════════════════ -->
+<section class="workspace upload-workspace hidden" id="upload-workspace" aria-label="Upload Sign Recognition">
+  <!-- Left Column: Upload Dropzone, Controls & Sample Images -->
+  <aside class="upload-sidebar">
+    <article class="panel upload-panel">
+      <header class="panel-head">
+        <div class="upload-head-title">
+          <span class="upload-badge">IMAGE RECOGNITION</span>
+          <h2 class="panel-title">Sign Image Classifier</h2>
+        </div>
+        <div class="upload-dialect-toggle" id="upload-dialect-toggle">
+          <button class="upload-dialect-btn active" id="upload-dialect-asl" data-dialect="asl">ASL</button>
+          <button class="upload-dialect-btn" id="upload-dialect-isl" data-dialect="isl">ISL</button>
+        </div>
+      </header>
+
+      <!-- Drag & Drop Zone -->
+      <div class="upload-dropzone" id="upload-dropzone">
+        <input type="file" id="upload-file-input" accept="image/*" class="upload-file-hidden" />
+        <div class="dropzone-icon">
+          <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+            <polyline points="17 8 12 3 7 8"></polyline>
+            <line x1="12" y1="3" x2="12" y2="15"></line>
+          </svg>
+        </div>
+        <div class="dropzone-title">Drop your hand sign image here</div>
+        <div class="dropzone-sub">or <span class="dropzone-browse">browse from computer</span></div>
+        <div class="dropzone-formats">Supports JPG, PNG, WEBP, Camera photos</div>
+      </div>
+
+      <!-- Quick Test Sample Signs -->
+      <div class="upload-samples-wrap">
+        <div class="upload-samples-label">Or test with quick reference signs:</div>
+        <div class="upload-samples-chips" id="upload-sample-chips">
+          <!-- Dynamically populated or static samples -->
+          <button class="sample-img-chip" data-dialect="asl" data-letter="A">ASL: A</button>
+          <button class="sample-img-chip" data-dialect="asl" data-letter="B">ASL: B</button>
+          <button class="sample-img-chip" data-dialect="asl" data-letter="C">ASL: C</button>
+          <button class="sample-img-chip" data-dialect="asl" data-letter="L">ASL: L</button>
+          <button class="sample-img-chip" data-dialect="asl" data-letter="V">ASL: V</button>
+          <button class="sample-img-chip" data-dialect="isl" data-letter="1">ISL: 1</button>
+          <button class="sample-img-chip" data-dialect="isl" data-letter="H">ISL: H</button>
+          <button class="sample-img-chip" data-dialect="isl" data-letter="O">ISL: O</button>
+        </div>
+      </div>
+
+      <div class="upload-actions-bar">
+        <button class="btn btn-danger" id="btn-clear-upload" style="display: none;">Remove Image</button>
+      </div>
+    </article>
+  </aside>
+
+  <!-- Right Column: Visual Stage with Annotated Canvas & Prediction Results Card -->
+  <section class="upload-stage" aria-label="Upload Analysis Stage">
+    <div class="upload-viewport" id="upload-viewport">
+      <!-- Empty Placeholder State -->
+      <div class="upload-empty-state" id="upload-empty-state">
+        <div class="upload-empty-icon">🖐️</div>
+        <h3>No Image Uploaded Yet</h3>
+        <p>Upload any picture with hand signs (ASL or ISL) to analyze 21 MediaPipe skeletal landmarks and classify the sign with top confidence matches.</p>
+        <button class="btn btn-primary" id="btn-trigger-browse">Choose Sign Image</button>
+      </div>
+
+      <!-- Image Canvas Container -->
+      <div class="upload-canvas-wrap hidden" id="upload-canvas-wrap">
+        <canvas id="upload-canvas"></canvas>
+      </div>
+
+      <!-- Prediction Floating HUD Overlay -->
+      <div class="upload-result-hud hidden" id="upload-result-hud">
+        <div class="result-hud-header">
+          <span class="result-badge-dialect" id="result-dialect-tag">ASL</span>
+          <span class="result-badge-hands" id="result-hands-tag">1 Hand Detected</span>
+        </div>
+        <div class="result-main-row">
+          <div class="result-letter-huge" id="result-letter">—</div>
+          <div class="result-details">
+            <div class="result-conf-row">
+              <span class="result-conf-label">Confidence</span>
+              <span class="result-conf-val" id="result-confidence">99.8%</span>
+            </div>
+            <div class="result-desc" id="result-desc">Detecting sign...</div>
+          </div>
+        </div>
+
+        <!-- Top 3 Probability Breakdown -->
+        <div class="result-top3-section">
+          <div class="result-top3-title">Top Model Predictions</div>
+          <div class="result-top3-bars" id="result-top3-bars">
+            <!-- Rendered dynamically -->
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+</section>
+
 <!-- ══ SETTINGS (top layer) ═════════════════════════════════════════════ -->
 <div popover id="panel-settings" class="sheet" style="display: none;">
   <header class="sheet-head">
@@ -388,6 +487,6 @@
 </dialog>
 
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
-<script src="app.js?v=19"></script>
+<script src="app.js?v=20"></script>
 </body>
 </html>

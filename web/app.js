@@ -997,22 +997,28 @@ function setupControls() {
   const btnAsl = document.getElementById('btn-asl');
   const btnIsl = document.getElementById('btn-isl');
   const btnVisually = document.getElementById('btn-visually');
+  const btnUpload = document.getElementById('btn-upload');
   const liveWorkspace = document.getElementById('live-workspace');
   const visuallyWorkspace = document.getElementById('visually-workspace');
+  const uploadWorkspace = document.getElementById('upload-workspace');
 
-  function isInVisuallyMode() {
-    return visuallyWorkspace && !visuallyWorkspace.classList.contains('hidden');
+  function hideAllWorkspaces() {
+    if (liveWorkspace) liveWorkspace.classList.add('hidden');
+    if (visuallyWorkspace) visuallyWorkspace.classList.add('hidden');
+    if (uploadWorkspace) uploadWorkspace.classList.add('hidden');
+    btnAsl.classList.remove('active');
+    btnIsl.classList.remove('active');
+    if (btnVisually) btnVisually.classList.remove('active');
+    if (btnUpload) btnUpload.classList.remove('active');
+    modeToggle.classList.remove('isl-mode', 'visually-mode', 'upload-mode');
   }
 
   btnAsl.addEventListener('click', () => {
     currentMode = 'asl';
     currentWeights = aslWeights;
+    hideAllWorkspaces();
     btnAsl.classList.add('active');
-    btnIsl.classList.remove('active');
-    if (btnVisually) btnVisually.classList.remove('active');
-    modeToggle.classList.remove('isl-mode', 'visually-mode');
     if (liveWorkspace) liveWorkspace.classList.remove('hidden');
-    if (visuallyWorkspace) visuallyWorkspace.classList.add('hidden');
     resetStreak();
     showToast('Switched to ASL (Live Camera)');
   });
@@ -1020,28 +1026,32 @@ function setupControls() {
   btnIsl.addEventListener('click', () => {
     currentMode = 'isl';
     currentWeights = islWeights;
+    hideAllWorkspaces();
     btnIsl.classList.add('active');
-    btnAsl.classList.remove('active');
-    if (btnVisually) btnVisually.classList.remove('active');
-    modeToggle.classList.remove('visually-mode');
     modeToggle.classList.add('isl-mode');
     if (liveWorkspace) liveWorkspace.classList.remove('hidden');
-    if (visuallyWorkspace) visuallyWorkspace.classList.add('hidden');
     resetStreak();
     showToast('Switched to ISL (Live Camera)');
   });
 
   if (btnVisually) {
     btnVisually.addEventListener('click', () => {
+      hideAllWorkspaces();
       btnVisually.classList.add('active');
-      btnAsl.classList.remove('active');
-      btnIsl.classList.remove('active');
-      modeToggle.classList.remove('isl-mode');
       modeToggle.classList.add('visually-mode');
-      if (liveWorkspace) liveWorkspace.classList.add('hidden');
       if (visuallyWorkspace) visuallyWorkspace.classList.remove('hidden');
       activatePracticeStudio();
       showToast('Practice Studio Active');
+    });
+  }
+
+  if (btnUpload) {
+    btnUpload.addEventListener('click', () => {
+      hideAllWorkspaces();
+      btnUpload.classList.add('active');
+      modeToggle.classList.add('upload-mode');
+      if (uploadWorkspace) uploadWorkspace.classList.remove('hidden');
+      showToast('Upload Image Recognition Active');
     });
   }
 
@@ -1134,6 +1144,8 @@ function setupControls() {
       btnIsl.click();
     } else if (e.key === '3') {
       if (btnVisually) btnVisually.click();
+    } else if (e.key === '4') {
+      if (btnUpload) btnUpload.click();
     }
   });
 }
@@ -1474,6 +1486,7 @@ window.addEventListener('DOMContentLoaded', async () => {
   setupControls();
   initPracticeStudio();
   initSignGuide();
+  initUploadStudio();
 
   setStatus('loading', 'Loading…');
   try {
@@ -2380,5 +2393,389 @@ function activatePracticeStudio() {
       canvas.width = Math.floor(rect.width) * dpr;
       canvas.height = Math.floor(rect.height) * dpr;
     }
+  }
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// UPLOAD SIGN RECOGNITION STUDIO IMPLEMENTATION
+// ══════════════════════════════════════════════════════════════════════════════
+
+function initUploadStudio() {
+  const uploadWorkspace = document.getElementById('upload-workspace');
+  const dropzone = document.getElementById('upload-dropzone');
+  const fileInput = document.getElementById('upload-file-input');
+  const btnTriggerBrowse = document.getElementById('btn-trigger-browse');
+  const btnClearUpload = document.getElementById('btn-clear-upload');
+  const emptyState = document.getElementById('upload-empty-state');
+  const canvasWrap = document.getElementById('upload-canvas-wrap');
+  const uploadCanvas = document.getElementById('upload-canvas');
+  const resultHud = document.getElementById('upload-result-hud');
+  const dialectAslBtn = document.getElementById('upload-dialect-asl');
+  const dialectIslBtn = document.getElementById('upload-dialect-isl');
+  const sampleChips = document.getElementById('upload-sample-chips');
+
+  const resultDialectTag = document.getElementById('result-dialect-tag');
+  const resultHandsTag = document.getElementById('result-hands-tag');
+  const resultLetter = document.getElementById('result-letter');
+  const resultConfidence = document.getElementById('result-confidence');
+  const resultDesc = document.getElementById('result-desc');
+  const resultTop3Bars = document.getElementById('result-top3-bars');
+
+  if (!uploadWorkspace || !uploadCanvas) return;
+
+  let uploadDialect = 'asl';
+  let activeImageObj = null;
+
+  // Dialect Toggle
+  if (dialectAslBtn && dialectIslBtn) {
+    dialectAslBtn.addEventListener('click', () => {
+      uploadDialect = 'asl';
+      dialectAslBtn.classList.add('active');
+      dialectIslBtn.classList.remove('active');
+      showToast('Upload Classifier: ASL Mode');
+      if (activeImageObj) {
+        processUploadedImage(activeImageObj);
+      }
+    });
+
+    dialectIslBtn.addEventListener('click', () => {
+      uploadDialect = 'isl';
+      dialectIslBtn.classList.add('active');
+      dialectAslBtn.classList.remove('active');
+      showToast('Upload Classifier: ISL Mode');
+      if (activeImageObj) {
+        processUploadedImage(activeImageObj);
+      }
+    });
+  }
+
+  // Browse triggers
+  if (btnTriggerBrowse) {
+    btnTriggerBrowse.addEventListener('click', () => {
+      if (fileInput) fileInput.click();
+    });
+  }
+
+  // Drag & Drop interactions
+  if (dropzone && fileInput) {
+    ['dragenter', 'dragover'].forEach(eventName => {
+      dropzone.addEventListener(eventName, (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        dropzone.classList.add('dragover');
+      });
+    });
+
+    ['dragleave', 'drop'].forEach(eventName => {
+      dropzone.addEventListener(eventName, (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        dropzone.classList.remove('dragover');
+      });
+    });
+
+    dropzone.addEventListener('drop', (e) => {
+      const files = e.dataTransfer.files;
+      if (files && files.length > 0) {
+        handleImageFile(files[0]);
+      }
+    });
+
+    fileInput.addEventListener('change', (e) => {
+      if (e.target.files && e.target.files.length > 0) {
+        handleImageFile(e.target.files[0]);
+      }
+    });
+  }
+
+  // Clear uploaded image
+  if (btnClearUpload) {
+    btnClearUpload.addEventListener('click', () => {
+      activeImageObj = null;
+      if (fileInput) fileInput.value = '';
+      if (emptyState) emptyState.classList.remove('hidden');
+      if (canvasWrap) canvasWrap.classList.add('hidden');
+      if (resultHud) resultHud.classList.add('hidden');
+      btnClearUpload.style.display = 'none';
+      const uctx = uploadCanvas.getContext('2d');
+      if (uctx) uctx.clearRect(0, 0, uploadCanvas.width, uploadCanvas.height);
+      showToast('Image cleared');
+    });
+  }
+
+  // Sample Chips
+  if (sampleChips) {
+    sampleChips.querySelectorAll('.sample-img-chip').forEach(chip => {
+      chip.addEventListener('click', () => {
+        const d = chip.dataset.dialect || 'asl';
+        const letter = chip.dataset.letter || 'A';
+        const src = (d === 'isl') ? `isl_signs/${letter}.png` : `asl_signs/${letter}.png`;
+
+        // Switch dialect to match sample chip
+        if (d === 'asl' && dialectAslBtn) dialectAslBtn.click();
+        else if (d === 'isl' && dialectIslBtn) dialectIslBtn.click();
+
+        loadImageFromUrl(src, `${d.toUpperCase()}: ${letter}`);
+      });
+    });
+  }
+
+  function handleImageFile(file) {
+    if (!file || !file.type.startsWith('image/')) {
+      showToast('⚠️ Please upload a valid image file (PNG, JPG, WEBP)');
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      loadImageFromUrl(e.target.result, file.name);
+    };
+    reader.readAsDataURL(file);
+  }
+
+  function loadImageFromUrl(url, label = 'image') {
+    showToast(`Analyzing ${label}…`);
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.onload = () => {
+      activeImageObj = img;
+      if (btnClearUpload) btnClearUpload.style.display = 'inline-flex';
+      processUploadedImage(img);
+    };
+    img.onerror = () => {
+      showToast('❌ Failed to load image');
+    };
+    img.src = url;
+  }
+
+  // Main Image Landmark Detection & Classification
+  async function processUploadedImage(img) {
+    if (!img) return;
+
+    // Show canvas, hide empty state
+    if (emptyState) emptyState.classList.add('hidden');
+    if (canvasWrap) canvasWrap.classList.remove('hidden');
+
+    const uctx = uploadCanvas.getContext('2d');
+    if (!uctx) return;
+
+    // Scale canvas to image dimensions while respecting display bounds
+    const maxW = 1200;
+    const maxH = 900;
+    let w = img.naturalWidth || img.width;
+    let h = img.naturalHeight || img.height;
+
+    if (w > maxW || h > maxH) {
+      const ratio = Math.min(maxW / w, maxH / h);
+      w = Math.round(w * ratio);
+      h = Math.round(h * ratio);
+    }
+
+    uploadCanvas.width = w;
+    uploadCanvas.height = h;
+
+    // Draw background photo
+    uctx.clearRect(0, 0, w, h);
+    uctx.drawImage(img, 0, 0, w, h);
+
+    // If HandLandmarker is not initialized yet, initialize it
+    if (!handLandmarker) {
+      showToast('Initializing hand detection model…');
+      try {
+        await initMediaPipe();
+      } catch (err) {
+        console.error('Failed to init handLandmarker:', err);
+      }
+    }
+
+    let detectedHands = [];
+    if (handLandmarker) {
+      try {
+        // Detect landmarks on static image element
+        const result = handLandmarker.detect(uploadCanvas);
+        const adapted = adaptResults(result);
+        detectedHands = adapted.multiHandLandmarks || [];
+        const handednessList = adapted.multiHandHandedness || adapted.multiHandedness || [];
+
+        // Draw Skeletal Overlays on the uploaded image
+        if (detectedHands.length > 0) {
+          detectedHands.forEach((lm) => {
+            drawUploadSkeleton(uctx, lm, w, h);
+          });
+        }
+      } catch (err) {
+        console.warn('MediaPipe static image detection error:', err);
+      }
+    }
+
+    // Now run classifier
+    await classifyUploadedSign(detectedHands, w, h);
+  }
+
+  function drawUploadSkeleton(ctx, lm, w, h) {
+    if (!lm || lm.length < 21) return;
+
+    ctx.save();
+    // Connections with vibrant glow
+    CONNECTIONS.forEach(([i, j], idx) => {
+      const p1 = lm[i];
+      const p2 = lm[j];
+      ctx.beginPath();
+      ctx.moveTo(p1.x * w, p1.y * h);
+      ctx.lineTo(p2.x * w, p2.y * h);
+      ctx.strokeStyle = EDGE_COLORS[idx] || '#6ec9a0';
+      ctx.lineWidth = Math.max(3, w * 0.005);
+      ctx.lineCap = 'round';
+      ctx.stroke();
+    });
+
+    // Landmark joints
+    lm.forEach((p, i) => {
+      const x = p.x * w;
+      const y = p.y * h;
+      ctx.beginPath();
+      ctx.arc(x, y, i === 0 ? Math.max(6, w * 0.008) : Math.max(4.5, w * 0.006), 0, 2 * Math.PI);
+      ctx.fillStyle = NODE_COLORS[i] || '#ffffff';
+      ctx.fill();
+      ctx.strokeStyle = '#ffffff';
+      ctx.lineWidth = 2;
+      ctx.stroke();
+    });
+    ctx.restore();
+  }
+
+  async function classifyUploadedSign(multiHandLandmarks, w, h) {
+    const isDual = (uploadDialect === 'isl');
+    let topLetter = '—';
+    let topConfidence = 0.0;
+    let top3 = [];
+    let detectedMsg = '';
+
+    if (!multiHandLandmarks || multiHandLandmarks.length === 0) {
+      // Fallback: If landmarks failed to detect, attempt server-side MobileNetV2 pixel CNN on full image
+      const dataUrl = uploadCanvas.toDataURL('image/jpeg', 0.85);
+      try {
+        const cnnRes = await fetch('/predict', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ mode: uploadDialect, image: dataUrl })
+        });
+        if (cnnRes.ok) {
+          const cnnData = await cnnRes.json();
+          topLetter = cnnData.letter || '—';
+          topConfidence = cnnData.confidence || 0.0;
+          top3 = cnnData.top3 || [];
+          detectedMsg = 'Predicted via Image Appearance CNN (No 2D skeleton joints visible)';
+        }
+      } catch (err) {
+        console.warn('CNN fallback failed:', err);
+      }
+
+      if (topLetter === '—') {
+        renderUploadResult({
+          letter: 'No Hand',
+          confidence: 0,
+          dialect: uploadDialect,
+          handsCount: 0,
+          desc: 'No clear hand landmarks detected in this image. Try an image with better lighting or a clearer hand view.',
+          top3: []
+        });
+        return;
+      }
+    } else {
+      // Build 78-D or 156-D feature vector
+      const feat = buildFeatureVector(multiHandLandmarks, isDual, [{ label: 'Right' }], w, h);
+
+      // Strategy 1: Post to Flask /predict_landmarks
+      let classified = false;
+      try {
+        const res = await fetch('/predict_landmarks', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ mode: uploadDialect, features: feat }),
+          signal: AbortSignal.timeout(2000)
+        });
+        if (res.ok) {
+          const data = await res.json();
+          topLetter = data.letter;
+          topConfidence = data.confidence;
+          top3 = data.top3 || [];
+          classified = true;
+        }
+      } catch (err) {
+        console.warn('Server prediction unavailable, running JS MLP fallback:', err);
+      }
+
+      // Strategy 2: In-browser JS MLP fallback
+      if (!classified) {
+        const oldMode = currentMode;
+        const oldWeights = currentWeights;
+        currentMode = uploadDialect;
+        currentWeights = (uploadDialect === 'isl') ? islWeights : aslWeights;
+        const jsRes = classifyJS(feat);
+        currentMode = oldMode;
+        currentWeights = oldWeights;
+
+        topLetter = jsRes.letter;
+        topConfidence = jsRes.confidence;
+        top3 = [{ label: topLetter, confidence: topConfidence }];
+      }
+
+      const handsCount = multiHandLandmarks.length;
+      detectedMsg = `${handsCount} Hand${handsCount > 1 ? 's' : ''} detected with 21 joint landmark skeleton.`;
+    }
+
+    renderUploadResult({
+      letter: topLetter,
+      confidence: topConfidence,
+      dialect: uploadDialect,
+      handsCount: multiHandLandmarks ? multiHandLandmarks.length : 1,
+      desc: detectedMsg,
+      top3: top3
+    });
+  }
+
+  function renderUploadResult(res) {
+    if (!resultHud) return;
+    resultHud.classList.remove('hidden');
+
+    if (resultDialectTag) resultDialectTag.textContent = res.dialect.toUpperCase();
+    if (resultHandsTag) {
+      resultHandsTag.textContent = res.handsCount > 0 ? `${res.handsCount} Hand${res.handsCount > 1 ? 's' : ''} Tracked` : 'Appearance Mode';
+    }
+
+    if (resultLetter) {
+      resultLetter.textContent = res.letter;
+      resultLetter.classList.remove('flash');
+      void resultLetter.offsetWidth;
+      resultLetter.classList.add('flash');
+    }
+
+    if (resultConfidence) {
+      resultConfidence.textContent = `${(res.confidence * 100).toFixed(1)}%`;
+    }
+
+    if (resultDesc) {
+      resultDesc.textContent = res.desc;
+    }
+
+    if (resultTop3Bars) {
+      resultTop3Bars.innerHTML = '';
+      const list = (res.top3 && res.top3.length > 0) ? res.top3 : [{ label: res.letter, confidence: res.confidence }];
+      list.forEach(item => {
+        const pct = Math.max(0, Math.min(100, Math.round(item.confidence * 100)));
+        const row = document.createElement('div');
+        row.className = 'top3-row';
+        row.innerHTML = `
+          <span class="top3-label">${item.label}</span>
+          <div class="top3-bar-track">
+            <div class="top3-bar-fill" style="width: ${pct}%"></div>
+          </div>
+          <span class="top3-val">${pct}%</span>
+        `;
+        resultTop3Bars.appendChild(row);
+      });
+    }
+
+    showToast(`Detected sign: ${res.letter} (${(res.confidence * 100).toFixed(1)}%)`);
   }
 }
