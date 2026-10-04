@@ -24,6 +24,10 @@ try:
 except ImportError:
     pyttsx3 = None
 
+import cv2
+import mediapipe as mp
+from mediapipe.tasks import python
+from mediapipe.tasks.python import vision
 from model import load_model, NORMALIZE_MEAN, NORMALIZE_STD, INPUT_SIZE
 
 # ─── Offline Text-to-Speech (Non-blocking Queue) ────────────────────────────────
@@ -153,6 +157,217 @@ def get_classes():
     elif mode in cnn_labels:
         return jsonify({"mode": mode, "classes": cnn_labels[mode], "count": len(cnn_labels[mode])})
     return jsonify({"error": f"Model '{mode}' not loaded"}), 404
+
+
+# ─── Static Image Feature Extraction for Upload Studio ───────────────────────────
+_static_detector = None
+
+def get_static_detector():
+    global _static_detector
+    if _static_detector is None:
+        task_path = os.path.join(BASE_DIR, "hand_landmarker.task")
+        if os.path.exists(task_path):
+            base_options = python.BaseOptions(model_asset_path=task_path)
+            options = vision.HandLandmarkerOptions(
+                base_options=base_options,
+                running_mode=vision.RunningMode.IMAGE,
+                num_hands=2,
+                min_hand_detection_confidence=0.25,
+                min_hand_presence_confidence=0.25
+            )
+            _static_detector = vision.HandLandmarker.create_from_options(options)
+            print("[+] Static HandLandmarker initialized for Upload Studio")
+    return _static_detector
+
+
+def calculate_angle_3d_np(a, b, c):
+    ba = a - b
+    bc = c - b
+    dot = np.dot(ba, bc)
+    norm = np.linalg.norm(ba) * np.linalg.norm(bc) + 1e-6
+    cosine_angle = np.clip(dot / norm, -1.0, 1.0)
+    return np.degrees(np.arccos(cosine_angle)) / 180.0
+
+
+def extract_single_hand_features(landmarks, wp, hp, handedness, mode="asl"):
+    pts = np.array([[lm.x * wp, lm.y * hp, lm.z * wp] for lm in landmarks], dtype=np.float32)
+
+    # In single-hand ASL, mirror Left hand to Right hand coordinate space
+    if mode == "asl" and handedness == "Left":
+        pts[:, 0] = pts[0, 0] - (pts[:, 0] - pts[0, 0])
+
+    wrist = pts[0]
+    pts_centered = pts - wrist
+
+    middle_mcp = pts_centered[9]
+    scale = np.linalg.norm(middle_mcp[:2])
+    if scale < 1e-4:
+        scale = 1.0
+    pts_scaled = pts_centered / scale
+
+    angle = np.arctan2(pts_scaled[9, 0], -pts_scaled[9, 1])
+    cos_a, sin_a = np.cos(angle), np.sin(angle)
+
+    if mode == "isl":
+        rot_matrix = np.array([[cos_a, -sin_a], [sin_a, cos_a]])
+    else:
+        rot_matrix = np.array([[cos_a, sin_a], [-sin_a, cos_a]])
+
+    pts_aligned = pts_scaled.copy()
+    pts_aligned[:, :2] = np.dot(pts_scaled[:, :2], rot_matrix)
+
+    angles = [
+        calculate_angle_3d_np(pts[0], pts[1], pts[2]),
+        calculate_angle_3d_np(pts[1], pts[2], pts[3]),
+        calculate_angle_3d_np(pts[2], pts[3], pts[4]),
+        calculate_angle_3d_np(pts[0], pts[5], pts[6]),
+        calculate_angle_3d_np(pts[5], pts[6], pts[7]),
+        calculate_angle_3d_np(pts[6], pts[7], pts[8]),
+        calculate_angle_3d_np(pts[0], pts[9], pts[10]),
+        calculate_angle_3d_np(pts[9], pts[10], pts[11]),
+        calculate_angle_3d_np(pts[10], pts[11], pts[12]),
+        calculate_angle_3d_np(pts[0], pts[13], pts[14]),
+        calculate_angle_3d_np(pts[13], pts[14], pts[15]),
+        calculate_angle_3d_np(pts[14], pts[15], pts[16]),
+        calculate_angle_3d_np(pts[0], pts[17], pts[18]),
+        calculate_angle_3d_np(pts[17], pts[18], pts[19]),
+        calculate_angle_3d_np(pts[18], pts[19], pts[20]),
+    ]
+    return np.concatenate([pts_aligned.flatten(), angles])
+
+
+@app.route("/predict_image", methods=["POST"])
+def predict_image():
+    data = request.get_json()
+    if not data:
+        return jsonify({"error": "No JSON body"}), 400
+
+    mode = data.get("mode", "asl").lower()
+    img_b64 = data.get("image", "")
+    if not img_b64:
+        return jsonify({"error": "No image data"}), 400
+
+    if mode not in landmark_models:
+        return jsonify({"error": f"Model '{mode}' not loaded"}), 404
+
+    try:
+        if "," in img_b64:
+            img_b64 = img_b64.split(",")[1]
+        raw_bytes = base64.b64decode(img_b64)
+        nparr = np.frombuffer(raw_bytes, np.uint8)
+        img_bgr = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+        if img_bgr is None:
+            return jsonify({"error": "Failed to decode image"}), 400
+
+        orig_h, orig_w = img_bgr.shape[:2]
+        pad = int(max(orig_h, orig_w) * 0.25)
+        img_padded = cv2.copyMakeBorder(img_bgr, pad, pad, pad, pad, cv2.BORDER_REPLICATE)
+        hp, wp = img_padded.shape[:2]
+
+        detector = get_static_detector()
+        if not detector:
+            return jsonify({"error": "Landmark detector not available"}), 500
+
+        img_rgb = cv2.cvtColor(img_padded, cv2.COLOR_BGR2RGB)
+        mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=img_rgb)
+        results = detector.detect(mp_image)
+
+        if not results.hand_landmarks:
+            # Fallback to CNN if landmarks cannot be found on image
+            if mode in cnn_models:
+                tensor = preprocess_image(img_b64)
+                with torch.no_grad():
+                    logits = cnn_models[mode](tensor)
+                    probs = torch.softmax(logits, dim=1)[0]
+                top3_probs, top3_idxs = torch.topk(probs, k=min(3, len(cnn_labels[mode])))
+                labels = cnn_labels[mode]
+                top3 = [{"label": labels[idx.item()], "confidence": round(prob.item(), 4)} for prob, idx in zip(top3_probs, top3_idxs)]
+                return jsonify({
+                    "mode": mode,
+                    "letter": top3[0]["label"],
+                    "confidence": top3[0]["confidence"],
+                    "top3": top3,
+                    "landmarks_detected": False,
+                    "hands": []
+                })
+            return jsonify({"error": "No hand detected in image", "landmarks_detected": False, "hands": []}), 200
+
+        # Convert detected landmarks back to original image coordinate space for drawing
+        drawn_hands = []
+        hands_data = []
+        for idx, lms in enumerate(results.hand_landmarks):
+            h_name = "Right"
+            if results.handedness and idx < len(results.handedness):
+                h_name = results.handedness[idx][0].category_name
+
+            norm_pts = []
+            for lm in lms:
+                px = lm.x * wp - pad
+                py = lm.y * hp - pad
+                norm_pts.append({
+                    "x": float(np.clip(px / orig_w, 0.0, 1.0)),
+                    "y": float(np.clip(py / orig_h, 0.0, 1.0)),
+                    "z": float(lm.z)
+                })
+            drawn_hands.append({"landmarks": norm_pts, "handedness": h_name})
+
+            feat = extract_single_hand_features(lms, wp, hp, h_name, mode=mode)
+            hands_data.append((lms[0].x, feat))
+
+        # Build feature vector matching model requirements
+        clf = landmark_models[mode]
+        labels = [str(c) for c in landmark_labels[mode]]
+
+        if mode == "isl" and getattr(clf, "n_features_in_", 78) == 156:
+            hands_data.sort(key=lambda x: x[0])
+            slot1 = hands_data[0][1]
+            slot2 = hands_data[1][1] if len(hands_data) > 1 else np.zeros(78, dtype=np.float32)
+            features = np.concatenate([slot1, slot2]).tolist()
+        else:
+            features = hands_data[0][1].tolist()
+
+        probs = np.array(clf.predict_proba([features])[0], dtype=np.float32)
+
+        # ISL hand count gating
+        if mode == "isl" and len(features) == 156:
+            ISL_SINGLE_HAND = {'1', '2', '3', '4', '5', '6', '7', '8', '9', 'C', 'I', 'J', 'L', 'O', 'Q', 'U', 'V'}
+            ISL_TWO_HAND = {'A', 'B', 'D', 'E', 'F', 'G', 'H', 'K', 'M', 'N', 'P', 'R', 'S', 'T', 'W', 'X', 'Y', 'Z'}
+            slot2 = features[78:]
+            num_hands = 1 if all(abs(v) < 1e-4 for v in slot2) else 2
+            if num_hands == 1:
+                for i, c in enumerate(labels):
+                    if c not in ISL_SINGLE_HAND:
+                        probs[i] = 0.0
+            else:
+                for i, c in enumerate(labels):
+                    if c not in ISL_TWO_HAND:
+                        probs[i] = 0.0
+            p_sum = float(np.sum(probs))
+            if p_sum > 0:
+                probs = probs / p_sum
+
+        top_idx = int(np.argmax(probs))
+        top_label = labels[top_idx]
+        top_conf = float(probs[top_idx])
+
+        top3_indices = np.argsort(probs)[::-1][:3]
+        top3 = [{"label": labels[i], "confidence": round(float(probs[i]), 4)} for i in top3_indices if probs[i] > 0.001]
+        if not top3:
+            top3 = [{"label": top_label, "confidence": round(top_conf, 4)}]
+
+        print(f"[/predict_image] {mode.upper()} -> {top_label} ({top_conf:.2%})", flush=True)
+
+        return jsonify({
+            "mode": mode,
+            "letter": top_label,
+            "confidence": top_conf,
+            "top3": top3,
+            "landmarks_detected": True,
+            "hands": drawn_hands
+        })
+    except Exception as e:
+        print(f"[!] Error in /predict_image: {e}", flush=True)
+        return jsonify({"error": str(e)}), 500
 
 
 @app.route("/predict_landmarks", methods=["POST"])
