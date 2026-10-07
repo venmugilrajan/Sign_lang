@@ -54,6 +54,9 @@ let streakLetter  = null;
 let streakCount   = 0;
 let noHandCount   = 0;
 
+// Camera view mirror state (default: false for normal real view, togglable to mirror)
+let cameraMirrorMode = localStorage.getItem('signlens_camera_mirror') === 'true';
+
 // State tracking to prevent runaway letter repeat without releasing hand
 let lastCapturedLetter = '';
 let releasedSinceLastCapture = true;
@@ -856,6 +859,35 @@ function setupControls() {
     renderSentence();
     resetStreak();
   });
+
+  // Mirror Camera Toggle
+  const btnMirror = document.getElementById('btn-mirror-toggle');
+  function updateMirrorUI() {
+    if (!displayCanvas) return;
+    if (cameraMirrorMode) {
+      displayCanvas.classList.add('mirrored');
+      if (btnMirror) {
+        btnMirror.innerHTML = '🪞 Mirror: On';
+        btnMirror.classList.add('active-btn');
+      }
+    } else {
+      displayCanvas.classList.remove('mirrored');
+      if (btnMirror) {
+        btnMirror.innerHTML = '📷 Normal View';
+        btnMirror.classList.remove('active-btn');
+      }
+    }
+  }
+  updateMirrorUI();
+
+  if (btnMirror) {
+    btnMirror.addEventListener('click', () => {
+      cameraMirrorMode = !cameraMirrorMode;
+      localStorage.setItem('signlens_camera_mirror', cameraMirrorMode);
+      updateMirrorUI();
+      showToast(cameraMirrorMode ? '🪞 Mirror Mode Enabled' : '📷 Normal View Enabled');
+    });
+  }
 
   document.getElementById('btn-pause-detection').addEventListener('click', function() {
     paused = !paused;
