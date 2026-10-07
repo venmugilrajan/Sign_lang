@@ -25,11 +25,12 @@ import {
   PCFSoftShadowMap,
 } from 'three';
 import { GLTFLoader } from '../vendor/three/examples/jsm/loaders/GLTFLoader.js';
+import { FBXLoader } from '../vendor/three/examples/jsm/loaders/FBXLoader.js';
 import { OrbitControls } from '../vendor/three/examples/jsm/controls/OrbitControls.js';
 import { AvatarRig } from './rig.js';
 import { BONE_NAMES } from './boneMap.js';
 
-export const DEFAULT_MODEL_URL = '/assets/avatar.glb';
+export const DEFAULT_MODEL_URL = '/assets/T-Pose.fbx';
 
 export class AvatarCanvas {
   /**
@@ -147,37 +148,63 @@ export class AvatarCanvas {
   }
 
   loadModel() {
-    const loader = new GLTFLoader();
-    loader.load(
-      this.modelUrl,
-      (gltf) => {
-        if (this.disposed) return;
-        this.modelRoot = gltf.scene || gltf.scenes[0];
-        this.scene.add(this.modelRoot);
+    const isFbx = this.modelUrl.toLowerCase().endsWith('.fbx');
+    const onLoaded = (root) => {
+      if (this.disposed) return;
+      this.modelRoot = root;
 
-        // Apply dark navy clothing style to tops so hands stand out clearly
-        this._styleModel(this.modelRoot);
-
-        this.rig = new AvatarRig(this.modelRoot, {
-          config: BONE_NAMES,
-          restHand: this.restHand,
-        });
-
-        // Frame waist-up from rig layout
-        this._frameWaistUp(this.rig.layout);
-
-        if (this.placeholderEl) this.placeholderEl.style.display = 'none';
-        console.log('[Avatar3D] Rig ready from GLB at', this.modelUrl);
-        if (this.onReady) this.onReady();
-      },
-      undefined,
-      (err) => {
-        if (this.disposed) return;
-        console.warn(`[Avatar3D] Could not load GLB at "${this.modelUrl}":`, err.message || err);
-        this._showPlaceholder();
-        if (this.onError) this.onError(err);
+      // Auto-detect centimeter rigs (e.g. Mixamo FBX height ~160-180cm) and scale to standard meters (~1.6-1.8m)
+      this.modelRoot.updateMatrixWorld(true);
+      const tempRig = new AvatarRig(this.modelRoot, { config: BONE_NAMES, silent: true });
+      if (tempRig.layout && tempRig.layout.headY > 20) {
+        this.modelRoot.scale.setScalar(0.01);
+        this.modelRoot.updateMatrixWorld(true);
       }
-    );
+
+      this.scene.add(this.modelRoot);
+
+      // Apply dark navy clothing style to tops so hands stand out clearly
+      this._styleModel(this.modelRoot);
+
+      this.rig = new AvatarRig(this.modelRoot, {
+        config: BONE_NAMES,
+        restHand: this.restHand,
+      });
+
+      // Frame waist-up from rig layout
+      this._frameWaistUp(this.rig.layout);
+
+      if (this.placeholderEl) this.placeholderEl.style.display = 'none';
+      console.log('[Avatar3D] Rig ready from model at', this.modelUrl);
+      if (this.onReady) this.onReady();
+    };
+
+    const onError = (err) => {
+      if (this.disposed) return;
+      console.warn(`[Avatar3D] Could not load model at "${this.modelUrl}":`, err.message || err);
+      // Fallback: If FBX failed, try loading /assets/avatar.glb before showing placeholder
+      if (isFbx && this.modelUrl !== '/assets/avatar.glb') {
+        console.info('[Avatar3D] Attempting fallback to /assets/avatar.glb...');
+        this.modelUrl = '/assets/avatar.glb';
+        this.loadModel();
+        return;
+      }
+      this._showPlaceholder();
+      if (this.onError) this.onError(err);
+    };
+
+    if (isFbx) {
+      const loader = new FBXLoader();
+      loader.load(this.modelUrl, onLoaded, undefined, onError);
+    } else {
+      const loader = new GLTFLoader();
+      loader.load(
+        this.modelUrl,
+        (gltf) => onLoaded(gltf.scene || gltf.scenes[0]),
+        undefined,
+        onError
+      );
+    }
   }
 
   _styleModel(root) {
@@ -227,9 +254,9 @@ export class AvatarCanvas {
           <p class="ph-desc">
             To view the rigged 3D human avatar, place a humanoid GLB model at:
           </p>
-          <code class="ph-path">web/assets/avatar.glb</code>
+          <code class="ph-path">web/assets/T-Pose.fbx</code> (or <code>avatar.glb</code>)
           <p class="ph-hint">
-            Compatible rigs: <strong>Ready Player Me (.glb)</strong> or <strong>Mixamo humanoid (.glb)</strong>.<br/>
+            Compatible rigs: <strong>Mixamo FBX / GLB</strong> or <strong>Ready Player Me (.glb)</strong>.<br/>
             Currently falling back to the 2D character graphics.
           </p>
           <button class="ph-btn" id="btn-dismiss-ph">Switch to 2D Mode</button>

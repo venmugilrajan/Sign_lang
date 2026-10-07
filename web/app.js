@@ -1660,13 +1660,13 @@ function initPracticeStudio() {
       try {
         const restHand = practiceTemplates?.asl?.REST || null;
         globalAvatar3D = new AvatarCanvas(canvas, {
-          modelUrl: '/assets/avatar.glb',
+          modelUrl: '/assets/T-Pose.fbx',
           restHand: restHand,
           onReady: () => {
             console.log('[PracticeStudio] 3D Avatar active and tracking practice playback.');
           },
           onError: (err) => {
-            console.info('[PracticeStudio] Falling back to 2D character renderer while GLB is not present.');
+            console.info('[PracticeStudio] Falling back to 2D character renderer while 3D model is not present.');
           }
         });
       } catch (err) {
