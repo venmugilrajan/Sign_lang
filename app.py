@@ -172,8 +172,8 @@ def get_static_detector():
                 base_options=base_options,
                 running_mode=vision.RunningMode.IMAGE,
                 num_hands=2,
-                min_hand_detection_confidence=0.25,
-                min_hand_presence_confidence=0.25
+                min_hand_detection_confidence=0.15,
+                min_hand_presence_confidence=0.15
             )
             _static_detector = vision.HandLandmarker.create_from_options(options)
             print("[+] Static HandLandmarker initialized for Upload Studio")
@@ -260,7 +260,8 @@ def predict_image():
             return jsonify({"error": "Failed to decode image"}), 400
 
         orig_h, orig_w = img_bgr.shape[:2]
-        pad = int(max(orig_h, orig_w) * 0.25)
+        pad_ratio = 0.15 if mode == "isl" else 0.25
+        pad = int(max(orig_h, orig_w) * pad_ratio)
         img_padded = cv2.copyMakeBorder(img_bgr, pad, pad, pad, pad, cv2.BORDER_REPLICATE)
         hp, wp = img_padded.shape[:2]
 
@@ -271,6 +272,15 @@ def predict_image():
         img_rgb = cv2.cvtColor(img_padded, cv2.COLOR_BGR2RGB)
         mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=img_rgb)
         results = detector.detect(mp_image)
+
+        # If 0 hands detected in ISL, retry with 0.25 padding as fallback
+        if not results.hand_landmarks and mode == "isl":
+            pad = int(max(orig_h, orig_w) * 0.25)
+            img_padded = cv2.copyMakeBorder(img_bgr, pad, pad, pad, pad, cv2.BORDER_REPLICATE)
+            hp, wp = img_padded.shape[:2]
+            img_rgb = cv2.cvtColor(img_padded, cv2.COLOR_BGR2RGB)
+            mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=img_rgb)
+            results = detector.detect(mp_image)
 
         if not results.hand_landmarks:
             # Fallback to CNN if landmarks cannot be found on image
@@ -295,7 +305,7 @@ def predict_image():
         # Convert detected landmarks back to original image coordinate space for drawing
         drawn_hands = []
         hands_data = []
-        for idx, lms in enumerate(results.hand_landmarks):
+        for idx, lms in enumerate(results.hand_landmarks[:2]):
             h_name = "Right"
             if results.handedness and idx < len(results.handedness):
                 h_name = results.handedness[idx][0].category_name
