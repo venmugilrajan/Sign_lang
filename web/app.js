@@ -2275,78 +2275,280 @@ function initPracticeStudio() {
     ctx.fillStyle = isLight ? '#eaedf4' : '#161619';
     ctx.fillRect(0, 0, w, h);
 
-    // 2. Stylized Red Silhouette Avatar (Head, Face, Torso, Arms - matching RyloTranslate)
-    const red = '#d82222';
-    ctx.strokeStyle = red;
-    ctx.fillStyle = red;
-    ctx.lineCap = 'round';
-    ctx.lineJoin = 'round';
-    ctx.shadowBlur = 0;
+    // 2. Realistic Modern Human Graphic Avatar
+    // Shaded tones (theme-sensitive with natural human skin, hair, and clothing palette)
+    const skinBase = isLight ? '#f2caaf' : '#dcb49a';
+    const skinShadow = isLight ? '#deaf92' : '#c49980';
+    const skinHighlight = isLight ? '#fce2d0' : '#eed0bd';
+    const hairColor = isLight ? '#2c221e' : '#1f1917';
+    const clothesTone = isLight ? '#2a4365' : '#1e324d';
+    const clothesShadow = isLight ? '#1a2b42' : '#132133';
+    const collarTone = isLight ? '#e2e8f0' : '#2d3748';
+    const eyePupil = '#1a202c';
+    const lipTone = isLight ? '#d47b74' : '#ba665f';
 
     // Shoulder & torso anchor points
-    const shoulderY = h * 0.48;
-    const leftShoulderX = w * 0.33;
-    const rightShoulderX = w * 0.71;
+    const shoulderY = h * 0.50;
+    const leftShoulderX = w * 0.32;
+    const rightShoulderX = w * 0.70;
 
-    // Head dimensions
+    // Head center & dimensions
     const headCx = w * 0.51;
     const headCy = h * 0.25;
-    const headRx = w * 0.082;
-    const headRy = h * 0.125;
+    const headRx = w * 0.088;
+    const headRy = h * 0.128;
 
-    // Head contour
-    ctx.lineWidth = 5 * dpr;
+    // ── TORSO & CLOTHING (Clean modern fitted shirt/crewneck) ──
+    ctx.save();
+    // Torso body fill
+    const torsoGrad = ctx.createLinearGradient(0, shoulderY - 10, 0, h);
+    torsoGrad.addColorStop(0, clothesTone);
+    torsoGrad.addColorStop(1, clothesShadow);
+    ctx.fillStyle = torsoGrad;
+
     ctx.beginPath();
-    ctx.ellipse(headCx, headCy, headRx, headRy, 0, 0, Math.PI * 2);
+    ctx.moveTo(w * 0.45, shoulderY - h * 0.04); // neck base left
+    ctx.quadraticCurveTo(leftShoulderX + w * 0.04, shoulderY - h * 0.02, leftShoulderX, shoulderY + h * 0.01); // left shoulder slope
+    ctx.lineTo(w * 0.35, h * 0.99); // torso left taper
+    ctx.lineTo(w * 0.67, h * 0.99); // torso bottom
+    ctx.lineTo(rightShoulderX, shoulderY + h * 0.01); // right torso edge
+    ctx.quadraticCurveTo(rightShoulderX - w * 0.04, shoulderY - h * 0.02, w * 0.57, shoulderY - h * 0.04); // right shoulder slope
+    ctx.closePath();
+    ctx.fill();
+
+    // Subtle clavicle / chest contour highlights
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.06)';
+    ctx.lineWidth = 2 * dpr;
+    ctx.beginPath();
+    ctx.moveTo(w * 0.44, shoulderY + h * 0.03);
+    ctx.quadraticCurveTo(w * 0.51, shoulderY + h * 0.06, w * 0.58, shoulderY + h * 0.03);
     ctx.stroke();
 
-    // Eyebrows (bold expressive arches)
-    ctx.lineWidth = 7 * dpr;
+    // Crewneck collar
+    ctx.fillStyle = collarTone;
     ctx.beginPath();
-    ctx.arc(headCx - headRx * 0.44, headCy - headRy * 0.35, headRx * 0.34, Math.PI * 1.1, Math.PI * 1.9, false);
-    ctx.stroke();
+    ctx.ellipse(headCx, shoulderY - h * 0.035, headRx * 0.58, headRy * 0.26, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    // ── NECK ──
+    const neckW = headRx * 0.62;
+    const neckTopY = headCy + headRy * 0.72;
+    const neckGrad = ctx.createLinearGradient(headCx - neckW, 0, headCx + neckW, 0);
+    neckGrad.addColorStop(0, skinShadow);
+    neckGrad.addColorStop(0.3, skinBase);
+    neckGrad.addColorStop(0.8, skinHighlight);
+    neckGrad.addColorStop(1, skinShadow);
+    ctx.fillStyle = neckGrad;
+
     ctx.beginPath();
-    ctx.arc(headCx + headRx * 0.44, headCy - headRy * 0.35, headRx * 0.34, Math.PI * 1.1, Math.PI * 1.9, false);
+    ctx.moveTo(headCx - neckW * 0.5, neckTopY);
+    ctx.lineTo(headCx - neckW * 0.65, shoulderY - h * 0.02);
+    ctx.quadraticCurveTo(headCx, shoulderY - h * 0.01, headCx + neckW * 0.65, shoulderY - h * 0.02);
+    ctx.lineTo(headCx + neckW * 0.5, neckTopY);
+    ctx.closePath();
+    ctx.fill();
+
+    // Neck under-chin shadow
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.12)';
+    ctx.beginPath();
+    ctx.ellipse(headCx, neckTopY + 4, neckW * 0.52, 8 * dpr, 0, 0, Math.PI);
+    ctx.fill();
+
+    // ── EARS ──
+    const earY = headCy + headRy * 0.08;
+    const earRx = headRx * 0.18;
+    const earRy = headRy * 0.26;
+    ctx.fillStyle = skinShadow;
+    ctx.beginPath();
+    ctx.ellipse(headCx - headRx * 0.96, earY, earRx, earRy, -0.1, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.ellipse(headCx + headRx * 0.96, earY, earRx, earRy, 0.1, 0, Math.PI * 2);
+    ctx.fill();
+
+    // ── HEAD & FACE CONTOUR (Smooth 3D volumetric oval) ──
+    const headGrad = ctx.createRadialGradient(
+      headCx - headRx * 0.25, headCy - headRy * 0.2, headRx * 0.15,
+      headCx, headCy, headRy * 1.05
+    );
+    headGrad.addColorStop(0, skinHighlight);
+    headGrad.addColorStop(0.55, skinBase);
+    headGrad.addColorStop(1, skinShadow);
+    ctx.fillStyle = headGrad;
+
+    ctx.beginPath();
+    // Natural tapered jawline
+    ctx.moveTo(headCx - headRx, headCy - headRy * 0.2);
+    ctx.bezierCurveTo(
+      headCx - headRx, headCy + headRy * 0.5,
+      headCx - headRx * 0.5, headCy + headRy,
+      headCx, headCy + headRy
+    );
+    ctx.bezierCurveTo(
+      headCx + headRx * 0.5, headCy + headRy,
+      headCx + headRx, headCy + headRy * 0.5,
+      headCx + headRx, headCy - headRy * 0.2
+    );
+    ctx.bezierCurveTo(
+      headCx + headRx, headCy - headRy,
+      headCx - headRx, headCy - headRy,
+      headCx - headRx, headCy - headRy * 0.2
+    );
+    ctx.closePath();
+    ctx.fill();
+
+    // Subtle jaw outline for crisp graphic readability
+    ctx.strokeStyle = isLight ? 'rgba(80, 50, 40, 0.18)' : 'rgba(255, 255, 255, 0.10)';
+    ctx.lineWidth = 1.5 * dpr;
     ctx.stroke();
 
-    // Eyes (almond shaped contours)
-    ctx.lineWidth = 3.5 * dpr;
+    // ── STYLISH HAIR (Modern textured crop) ──
+    ctx.fillStyle = hairColor;
     ctx.beginPath();
-    ctx.ellipse(headCx - headRx * 0.42, headCy - headRy * 0.12, headRx * 0.24, headRy * 0.12, 0, 0, Math.PI * 2);
+    ctx.moveTo(headCx - headRx * 1.02, headCy - headRy * 0.15);
+    ctx.bezierCurveTo(
+      headCx - headRx * 1.1, headCy - headRy * 0.95,
+      headCx - headRx * 0.4, headCy - headRy * 1.25,
+      headCx, headCy - headRy * 1.18
+    );
+    ctx.bezierCurveTo(
+      headCx + headRx * 0.5, headCy - headRy * 1.25,
+      headCx + headRx * 1.1, headCy - headRy * 0.95,
+      headCx + headRx * 1.02, headCy - headRy * 0.15
+    );
+    ctx.quadraticCurveTo(headCx + headRx * 0.85, headCy - headRy * 0.55, headCx + headRx * 0.65, headCy - headRy * 0.58);
+    ctx.quadraticCurveTo(headCx + headRx * 0.2, headCy - headRy * 0.72, headCx - headRx * 0.1, headCy - headRy * 0.58);
+    ctx.quadraticCurveTo(headCx - headRx * 0.55, headCy - headRy * 0.68, headCx - headRx * 0.90, headCy - headRy * 0.42);
+    ctx.closePath();
+    ctx.fill();
+
+    // ── EYEBROWS (Refined natural arches) ──
+    ctx.strokeStyle = hairColor;
+    ctx.lineWidth = 3.2 * dpr;
+    ctx.lineCap = 'round';
+
+    const browY = headCy - headRy * 0.18;
+    // Left eyebrow
+    ctx.beginPath();
+    ctx.moveTo(headCx - headRx * 0.62, browY + 2);
+    ctx.quadraticCurveTo(headCx - headRx * 0.40, browY - 6 * dpr, headCx - headRx * 0.16, browY - 1);
     ctx.stroke();
+    // Right eyebrow
     ctx.beginPath();
-    ctx.ellipse(headCx + headRx * 0.42, headCy - headRy * 0.12, headRx * 0.24, headRy * 0.12, 0, 0, Math.PI * 2);
+    ctx.moveTo(headCx + headRx * 0.16, browY - 1);
+    ctx.quadraticCurveTo(headCx + headRx * 0.40, browY - 6 * dpr, headCx + headRx * 0.62, browY + 2);
     ctx.stroke();
 
-    // Mouth (expressive open oval)
-    ctx.lineWidth = 4.5 * dpr;
+    // ── EYES (Natural iris, cornea, pupil and light reflection) ──
+    const eyeY = headCy - headRy * 0.03;
+    const eyeSpacing = headRx * 0.38;
+    const eyeW = headRx * 0.24;
+    const eyeH = headRy * 0.13;
+
+    [-1, 1].forEach(dir => {
+      const ex = headCx + dir * eyeSpacing;
+      // White sclera with soft shadow
+      ctx.fillStyle = '#ffffff';
+      ctx.beginPath();
+      ctx.ellipse(ex, eyeY, eyeW, eyeH, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = isLight ? 'rgba(40, 20, 10, 0.4)' : 'rgba(255, 255, 255, 0.2)';
+      ctx.lineWidth = 1.2 * dpr;
+      ctx.stroke();
+
+      // Iris (Warm Hazel / Brown)
+      ctx.fillStyle = '#4a3528';
+      ctx.beginPath();
+      ctx.arc(ex, eyeY, eyeH * 0.88, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Pupil
+      ctx.fillStyle = eyePupil;
+      ctx.beginPath();
+      ctx.arc(ex, eyeY, eyeH * 0.50, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Catchlight sparkle
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.85)';
+      ctx.beginPath();
+      ctx.arc(ex - eyeW * 0.18, eyeY - eyeH * 0.25, 1.8 * dpr, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Upper eyelid crease
+      ctx.strokeStyle = isLight ? 'rgba(60, 40, 30, 0.45)' : 'rgba(240, 220, 210, 0.4)';
+      ctx.lineWidth = 1.8 * dpr;
+      ctx.beginPath();
+      ctx.arc(ex, eyeY + 1, eyeW * 1.05, Math.PI * 1.15, Math.PI * 1.85, false);
+      ctx.stroke();
+    });
+
+    // ── NOSE (Subtle clean profile) ──
+    const noseY = headCy + headRy * 0.22;
+    ctx.strokeStyle = isLight ? 'rgba(120, 75, 55, 0.45)' : 'rgba(255, 200, 180, 0.35)';
+    ctx.lineWidth = 1.8 * dpr;
     ctx.beginPath();
-    ctx.ellipse(headCx, headCy + headRy * 0.38, headRx * 0.32, headRy * 0.16, 0, 0, Math.PI * 2);
+    ctx.moveTo(headCx, headCy + headRy * 0.05);
+    ctx.lineTo(headCx - 2 * dpr, noseY);
+    ctx.quadraticCurveTo(headCx, noseY + 3 * dpr, headCx + 3 * dpr, noseY);
     ctx.stroke();
 
-    // Torso Frame:
-    ctx.lineWidth = 5 * dpr;
-
-    // Clavicle / shoulder horizontal bar
+    // ── MOUTH (Friendly, natural warm smile) ──
+    const mouthY = headCy + headRy * 0.48;
+    const mouthW = headRx * 0.34;
+    // Lips
+    ctx.fillStyle = lipTone;
     ctx.beginPath();
-    ctx.moveTo(leftShoulderX, shoulderY);
-    ctx.lineTo(rightShoulderX, shoulderY);
+    ctx.moveTo(headCx - mouthW, mouthY);
+    ctx.quadraticCurveTo(headCx, mouthY + headRy * 0.14, headCx + mouthW, mouthY);
+    ctx.quadraticCurveTo(headCx, mouthY + headRy * 0.05, headCx - mouthW, mouthY);
+    ctx.fill();
+
+    ctx.strokeStyle = isLight ? '#a34842' : '#8c3832';
+    ctx.lineWidth = 1.5 * dpr;
+    ctx.beginPath();
+    ctx.moveTo(headCx - mouthW, mouthY);
+    ctx.quadraticCurveTo(headCx, mouthY + 3 * dpr, headCx + mouthW, mouthY);
     ctx.stroke();
 
-    // Torso body lines (tapering downwards)
-    ctx.beginPath();
-    ctx.moveTo(leftShoulderX, shoulderY);
-    ctx.lineTo(w * 0.39, h * 0.98);
-    ctx.moveTo(rightShoulderX, shoulderY);
-    ctx.lineTo(w * 0.65, h * 0.98);
-    ctx.stroke();
+    ctx.restore();
 
-    // Determine dual-hand vs single-hand posture
+    // Helper to draw realistic rounded arm segment (bicep / forearm)
+    function drawArmSegment(p1x, p1y, p2x, p2y, w1, w2, fillColor, strokeColor) {
+      const dx = p2x - p1x;
+      const dy = p2y - p1y;
+      const len = Math.sqrt(dx * dx + dy * dy);
+      if (len < 1) return;
+      const nx = -dy / len;
+      const ny = dx / len;
+
+      ctx.save();
+      ctx.beginPath();
+      ctx.moveTo(p1x + nx * w1, p1y + ny * w1);
+      ctx.lineTo(p2x + nx * w2, p2y + ny * w2);
+      ctx.arc(p2x, p2y, w2, Math.atan2(ny, nx), Math.atan2(-ny, -nx), false);
+      ctx.lineTo(p1x - nx * w1, p1y - ny * w1);
+      ctx.arc(p1x, p1y, w1, Math.atan2(-ny, -nx), Math.atan2(ny, nx), false);
+      ctx.closePath();
+
+      ctx.fillStyle = fillColor;
+      ctx.fill();
+      if (strokeColor) {
+        ctx.strokeStyle = strokeColor;
+        ctx.lineWidth = 1.5 * dpr;
+        ctx.stroke();
+      }
+      ctx.restore();
+    }
+
+    // ── ARMS & SIGNING POSTURE ──
     const is2H = practiceCurrentPose && practiceCurrentPose.twoHanded && practiceCurrentPose.left;
     const handScale = Math.min(w * 0.20, h * 0.20);
+    const sleeveCol = clothesTone;
+    const armSkin = skinBase;
+    const armStroke = isLight ? 'rgba(70, 45, 35, 0.2)' : 'rgba(255, 255, 255, 0.1)';
 
     if (is2H) {
-      // TWO-HANDED MODE: Both arms raised into signing space
+      // TWO-HANDED MODE: Both arms active in front of chest/torso
       const offLx = (practiceCurrentPose.wristL ? practiceCurrentPose.wristL[0] : 0) * handScale;
       const offLy = (practiceCurrentPose.wristL ? practiceCurrentPose.wristL[1] : 0) * handScale;
       const offRx = (practiceCurrentPose.wristR ? practiceCurrentPose.wristR[0] : 0) * handScale;
@@ -2357,52 +2559,42 @@ function initPracticeStudio() {
       const wristR_X = w * 0.63 + offRx;
       const wristR_Y = h * 0.65 + offRy;
 
-      const elbowL_X = leftShoulderX - w * 0.07;
-      const elbowL_Y = (shoulderY + wristL_Y) / 2 + h * 0.08;
-      const elbowR_X = rightShoulderX + w * 0.07;
-      const elbowR_Y = (shoulderY + wristR_Y) / 2 + h * 0.08;
+      const elbowL_X = leftShoulderX - w * 0.06;
+      const elbowL_Y = (shoulderY + wristL_Y) / 2 + h * 0.07;
+      const elbowR_X = rightShoulderX + w * 0.06;
+      const elbowR_Y = (shoulderY + wristR_Y) / 2 + h * 0.07;
 
-      // Left Arm (viewer-left): Shoulder -> Elbow -> Wrist
-      ctx.beginPath();
-      ctx.moveTo(leftShoulderX, shoulderY);
-      ctx.lineTo(elbowL_X, elbowL_Y);
-      ctx.lineTo(wristL_X, wristL_Y);
-      ctx.stroke();
+      // Left Upper Arm (Shirt sleeve) & Forearm (Skin)
+      drawArmSegment(leftShoulderX, shoulderY, elbowL_X, elbowL_Y, 15 * dpr, 13 * dpr, sleeveCol, armStroke);
+      drawArmSegment(elbowL_X, elbowL_Y, wristL_X, wristL_Y, 12 * dpr, 9 * dpr, armSkin, armStroke);
 
-      // Right Arm (viewer-right): Shoulder -> Elbow -> Wrist
-      ctx.beginPath();
-      ctx.moveTo(rightShoulderX, shoulderY);
-      ctx.lineTo(elbowR_X, elbowR_Y);
-      ctx.lineTo(wristR_X, wristR_Y);
-      ctx.stroke();
+      // Right Upper Arm (Shirt sleeve) & Forearm (Skin)
+      drawArmSegment(rightShoulderX, shoulderY, elbowR_X, elbowR_Y, 15 * dpr, 13 * dpr, sleeveCol, armStroke);
+      drawArmSegment(elbowR_X, elbowR_Y, wristR_X, wristR_Y, 12 * dpr, 9 * dpr, armSkin, armStroke);
 
-      // Render both hand skeletons
+      // Render both detailed hand skeletons with finger colors
       drawHandSkeleton(ctx, practiceCurrentPose.left, wristL_X, wristL_Y, dpr, handScale, true);
       drawHandSkeleton(ctx, practiceCurrentPose.right, wristR_X, wristR_Y, dpr, handScale, false);
     } else {
-      // SINGLE-HANDED MODE: Dominant signing arm active, other arm resting naturally
+      // SINGLE-HANDED MODE: Dominant signing arm raised, other resting naturally
       const wristX = w * 0.34;
       const wristY = h * 0.65;
-      const elbowL_X = w * 0.24;
-      const elbowL_Y = h * 0.84;
+      const elbowL_X = w * 0.25;
+      const elbowL_Y = h * 0.81;
 
-      // Signing Arm (viewer-left): Shoulder -> Elbow -> Wrist
-      ctx.beginPath();
-      ctx.moveTo(leftShoulderX, shoulderY);
-      ctx.lineTo(elbowL_X, elbowL_Y);
-      ctx.lineTo(wristX, wristY);
-      ctx.stroke();
+      // Signing Arm (viewer-left)
+      drawArmSegment(leftShoulderX, shoulderY, elbowL_X, elbowL_Y, 15 * dpr, 13 * dpr, sleeveCol, armStroke);
+      drawArmSegment(elbowL_X, elbowL_Y, wristX, wristY, 12 * dpr, 9 * dpr, armSkin, armStroke);
 
-      // Resting Arm (viewer-right): Shoulder -> Elbow -> Forearm down
-      const elbowR_X = w * 0.76;
-      const elbowR_Y = h * 0.82;
-      ctx.beginPath();
-      ctx.moveTo(rightShoulderX, shoulderY);
-      ctx.lineTo(elbowR_X, elbowR_Y);
-      ctx.lineTo(w * 0.68, h * 0.98);
-      ctx.stroke();
+      // Resting Arm (viewer-right)
+      const elbowR_X = w * 0.75;
+      const elbowR_Y = h * 0.78;
+      const wristR_RestX = w * 0.68;
+      const wristR_RestY = h * 0.98;
+      drawArmSegment(rightShoulderX, shoulderY, elbowR_X, elbowR_Y, 15 * dpr, 13 * dpr, sleeveCol, armStroke);
+      drawArmSegment(elbowR_X, elbowR_Y, wristR_RestX, wristR_RestY, 12 * dpr, 9 * dpr, armSkin, armStroke);
 
-      // Render single hand skeleton
+      // Render single signing hand skeleton
       const singlePose = practiceCurrentPose ? (practiceCurrentPose.right || practiceCurrentPose.left) : null;
       if (singlePose) {
         drawHandSkeleton(ctx, singlePose, wristX, wristY, dpr, handScale, false);
