@@ -5,6 +5,10 @@
  * of our custom MLP Neural Network trained on the 21 hand landmarks.
  */
 
+// ── Avatar 3D Module ────────────────────────────────────────────────────────
+import { AvatarCanvas } from './avatar/AvatarCanvas.js';
+let globalAvatar3D = null;
+
 // ── Config ──────────────────────────────────────────────────────────────────
 let   STREAK_NEEDED   = 5;     // frames of same letter to capture (settings sheet, matches native)
 const COOLDOWN_MS     = 350;   // ms after capture before detecting again (fluid sign transitions)
@@ -1629,6 +1633,11 @@ function initPracticeStudio() {
       console.log('[PracticeStudio] Loaded sign templates:', Object.keys(data.asl || {}).length, 'ASL,', Object.keys(data.isl || {}).length, 'ISL');
       // Set initial pose
       practiceCurrentPose = clonePose(getTemplatePose('REST'));
+      window.practiceCurrentPose = practiceCurrentPose;
+
+      // ── Initialize 3D Avatar (Feature Flag: window.USE_3D_AVATAR) ──
+      initAvatar3DRenderer();
+
       drawAvatar();
       const panelGuide = document.getElementById('panel-guide');
       if (panelGuide && (panelGuide.matches(':popover-open') || panelGuide.classList.contains('open'))) {
@@ -1638,6 +1647,34 @@ function initPracticeStudio() {
     .catch(err => {
       console.warn('[PracticeStudio] Failed to load sign_templates.json:', err);
     });
+
+  function initAvatar3DRenderer() {
+    if (window.USE_3D_AVATAR === false) {
+      if (globalAvatar3D) {
+        globalAvatar3D.dispose();
+        globalAvatar3D = null;
+      }
+      return;
+    }
+    if (!globalAvatar3D && canvas) {
+      try {
+        const restHand = practiceTemplates?.asl?.REST || null;
+        globalAvatar3D = new AvatarCanvas(canvas, {
+          modelUrl: '/assets/avatar.glb',
+          restHand: restHand,
+          onReady: () => {
+            console.log('[PracticeStudio] 3D Avatar active and tracking practice playback.');
+          },
+          onError: (err) => {
+            console.info('[PracticeStudio] Falling back to 2D character renderer while GLB is not present.');
+          }
+        });
+      } catch (err) {
+        console.warn('[PracticeStudio] Failed to initialize Three.js AvatarCanvas:', err);
+      }
+    }
+  }
+  window._reinitAvatarRenderer = initAvatar3DRenderer;
 
   // 2. DOM elements
   const txtInput = document.getElementById('practice-input');
@@ -2170,6 +2207,7 @@ function initPracticeStudio() {
       ];
       practiceCurrentPose.desc = practiceToPose.desc;
       practiceCurrentPose.breathOffset = breathOffset;
+      window.practiceCurrentPose = practiceCurrentPose;
 
       if (practiceIsPlaying && elapsed >= totalStepMs) {
         if (practiceCurrentIndex < practiceSequence.length - 1) {
@@ -2181,6 +2219,9 @@ function initPracticeStudio() {
         }
       }
     }
+
+    // When 3D Avatar has loaded its rig and is rendering via WebGL, skip 2D canvas drawing
+    if (globalAvatar3D && globalAvatar3D.rig) return;
 
     drawAvatar();
   }
