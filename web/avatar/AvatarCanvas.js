@@ -21,7 +21,7 @@ import {
   Color,
   MeshStandardMaterial,
   Mesh,
-  sRGBEncoding,
+  SRGBColorSpace,
   PCFSoftShadowMap,
 } from 'three';
 import { GLTFLoader } from '../vendor/three/examples/jsm/loaders/GLTFLoader.js';
@@ -64,7 +64,7 @@ export class AvatarCanvas {
       powerPreference: 'high-performance',
     });
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
-    this.renderer.outputEncoding = sRGBEncoding;
+    this.renderer.outputColorSpace = SRGBColorSpace;
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = PCFSoftShadowMap;
 

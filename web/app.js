@@ -6,8 +6,9 @@
  */
 
 // ── Avatar 3D Module ────────────────────────────────────────────────────────
-import { AvatarCanvas } from './avatar/AvatarCanvas.js';
+import { AvatarCanvas } from './avatar/AvatarCanvas.js?v=26';
 let globalAvatar3D = null;
+window.globalAvatar3D = null;
 
 // ── Config ──────────────────────────────────────────────────────────────────
 let   STREAK_NEEDED   = 5;     // frames of same letter to capture (settings sheet, matches native)
@@ -1653,22 +1654,28 @@ function initPracticeStudio() {
       if (globalAvatar3D) {
         globalAvatar3D.dispose();
         globalAvatar3D = null;
+        window.globalAvatar3D = null;
       }
       return;
     }
-    if (!globalAvatar3D && canvas) {
+    const canvas3D = document.getElementById('avatar-canvas-3d');
+    if (!globalAvatar3D && canvas3D) {
       try {
         const restHand = practiceTemplates?.asl?.REST || null;
-        globalAvatar3D = new AvatarCanvas(canvas, {
+        globalAvatar3D = new AvatarCanvas(canvas3D, {
           modelUrl: '/assets/T-Pose.fbx',
           restHand: restHand,
           onReady: () => {
             console.log('[PracticeStudio] 3D Avatar active and tracking practice playback.');
+            if (ctx && canvas) {
+              ctx.clearRect(0, 0, canvas.width, canvas.height);
+            }
           },
           onError: (err) => {
             console.info('[PracticeStudio] Falling back to 2D character renderer while 3D model is not present.');
           }
         });
+        window.globalAvatar3D = globalAvatar3D;
       } catch (err) {
         console.warn('[PracticeStudio] Failed to initialize Three.js AvatarCanvas:', err);
       }
