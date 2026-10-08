@@ -97,8 +97,38 @@ function isOptionalEndBone(name) {
 export function resolveBones(root, config = BONE_NAMES) {
   /** @type {Map<string, any>} */
   const byLowerName = new Map();
+  // 1. First index bones from SkinnedMesh skeletons directly so they deform the mesh
   root.traverse((o) => {
-    if (o && o.name) byLowerName.set(String(o.name).toLowerCase(), o);
+    if (o && o.isSkinnedMesh && o.skeleton && o.skeleton.bones) {
+      o.skeleton.bones.forEach((b) => {
+        if (b && b.name) {
+          // If this is a Mixamo leaf dummy bone whose parent has the exact same name, ignore it
+          if (b.parent && b.parent.name && b.parent.name.toLowerCase() === b.name.toLowerCase()) {
+            return;
+          }
+          const key = String(b.name).toLowerCase();
+          const existing = byLowerName.get(key);
+          if (!existing || (b.children && b.children.length > 0 && (!existing.children || existing.children.length === 0))) {
+            byLowerName.set(key, b);
+          }
+        }
+      });
+    }
+  });
+
+  // 2. Index any remaining bones in the general scene graph
+  root.traverse((o) => {
+    if (o && o.name) {
+      // Ignore dummy child bones that share the same name as their parent
+      if (o.parent && o.parent.name && o.parent.name.toLowerCase() === o.name.toLowerCase()) {
+        return;
+      }
+      const key = String(o.name).toLowerCase();
+      const existing = byLowerName.get(key);
+      if (!existing || (o.children && o.children.length > 0 && (!existing.children || existing.children.length === 0))) {
+        byLowerName.set(key, o);
+      }
+    }
   });
 
   /** @param {string} expected */

@@ -17,7 +17,7 @@
  * The hand shapes keep their chirality (no x flip), so no hand is ever mirrored.
  */
 import { Vector3, Quaternion } from 'three';
-import { BONE_NAMES, FINGER_NAMES, resolveBones, warnMissingBones } from './boneMap.js';
+import { BONE_NAMES, FINGER_NAMES, resolveBones, warnMissingBones } from './boneMap.js?v=29';
 import {
   HAND_UNIT_METERS,
   FINGER_BONE_COUNT,

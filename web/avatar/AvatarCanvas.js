@@ -23,12 +23,13 @@ import {
   Mesh,
   SRGBColorSpace,
   PCFSoftShadowMap,
+  Vector3,
 } from 'three';
 import { GLTFLoader } from '../vendor/three/examples/jsm/loaders/GLTFLoader.js';
 import { FBXLoader } from '../vendor/three/examples/jsm/loaders/FBXLoader.js';
 import { OrbitControls } from '../vendor/three/examples/jsm/controls/OrbitControls.js';
-import { AvatarRig } from './rig.js';
-import { BONE_NAMES } from './boneMap.js';
+import { AvatarRig } from './rig.js?v=29';
+import { BONE_NAMES } from './boneMap.js?v=29';
 
 export const DEFAULT_MODEL_URL = '/assets/T-Pose.fbx';
 
@@ -115,10 +116,14 @@ export class AvatarCanvas {
     this._themeObserver = new MutationObserver(() => this.updateThemeBackground());
     this._themeObserver.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
 
+    // Window resize listener
+    this.resize = this.resize.bind(this);
+    window.addEventListener('resize', this.resize);
+
     // Initial resize
     this.resize();
 
-    // Start loading GLB
+    // Start loading model
     this.loadModel();
 
     // Bound render loop
@@ -155,15 +160,21 @@ export class AvatarCanvas {
 
       // Auto-detect centimeter rigs (e.g. Mixamo FBX height ~160-180cm) and scale to standard meters (~1.6-1.8m)
       this.modelRoot.updateMatrixWorld(true);
-      const tempRig = new AvatarRig(this.modelRoot, { config: BONE_NAMES, silent: true });
-      if (tempRig.layout && tempRig.layout.headY > 20) {
+      let isCm = false;
+      this.modelRoot.traverse((o) => {
+        if (o.isBone && /head/i.test(o.name)) {
+          const wp = o.getWorldPosition(new Vector3());
+          if (wp.y > 20) isCm = true;
+        }
+      });
+      if (isCm) {
         this.modelRoot.scale.setScalar(0.01);
         this.modelRoot.updateMatrixWorld(true);
       }
 
       this.scene.add(this.modelRoot);
 
-      // Apply dark navy clothing style to tops so hands stand out clearly
+      // Apply dark navy clothing style to tops and warm skin tone
       this._styleModel(this.modelRoot);
 
       this.rig = new AvatarRig(this.modelRoot, {
@@ -208,15 +219,26 @@ export class AvatarCanvas {
   }
 
   _styleModel(root) {
-    // Solid dark navy clothing palette matching requirement
+    // Elegant human styling: warm natural skin & dark navy clothing
     const darkNavy = new Color(0x18202f);
+    const skinTone = new Color(0xdfa684);
+    const jointAccent = new Color(0x2d3748);
+
     root.traverse((o) => {
       if (o.isMesh && o.material) {
         o.castShadow = true;
         o.receiveShadow = true;
         const mat = o.material;
         const name = (o.name || '').toLowerCase() + ' ' + (mat.name || '').toLowerCase();
-        if (name.includes('top') || name.includes('shirt') || name.includes('cloth') || name.includes('outfit_top')) {
+
+        if (name.includes('joint')) {
+          if (mat.color) mat.color.copy(jointAccent);
+          if (mat.shininess !== undefined) mat.shininess = 15;
+        } else if (name.includes('surface') || name.includes('limb') || name.includes('body')) {
+          if (mat.color) mat.color.copy(skinTone);
+          if (mat.specular) mat.specular.setHex(0x332219);
+          if (mat.shininess !== undefined) mat.shininess = 8;
+        } else if (name.includes('top') || name.includes('shirt') || name.includes('cloth') || name.includes('outfit_top')) {
           if (mat.color) mat.color.copy(darkNavy);
           if (mat.roughness !== undefined) mat.roughness = 0.85;
         }
@@ -225,13 +247,17 @@ export class AvatarCanvas {
   }
 
   _frameWaistUp(layout) {
-    const targetY = (layout.headY + layout.hipsY) * 0.52;
+    // Focus target at chest/neck center so face and both hands remain centered
+    const targetY = (layout.headY + layout.hipsY) * 0.53;
     this.controls.target.set(layout.centerX, targetY, layout.centerZ);
 
-    // Frame camera: low angle looking slightly upward
-    const dist = Math.max(1.3, layout.shoulderSpan * 2.8);
-    this.camera.position.set(layout.centerX, targetY - 0.08, layout.centerZ + dist);
+    // Frame camera: comfortable waist-up view showing both arms, hands, and head
+    const span = Math.max(layout.shoulderSpan || 0.35, (layout.armLength || 0.55) * 1.4);
+    const dist = Math.max(1.85, span * 2.3);
+    this.camera.fov = 34;
+    this.camera.position.set(layout.centerX, targetY + 0.05, layout.centerZ + dist);
     this.camera.lookAt(this.controls.target);
+    this.camera.updateProjectionMatrix();
     this.controls.update();
   }
 
@@ -306,6 +332,7 @@ export class AvatarCanvas {
 
   dispose() {
     this.disposed = true;
+    window.removeEventListener('resize', this.resize);
     if (this.animFrameId) cancelAnimationFrame(this.animFrameId);
     if (this._themeObserver) this._themeObserver.disconnect();
     if (this.controls) this.controls.dispose();

@@ -6,7 +6,7 @@
  */
 
 // ── Avatar 3D Module ────────────────────────────────────────────────────────
-import { AvatarCanvas } from './avatar/AvatarCanvas.js?v=26';
+import { AvatarCanvas } from './avatar/AvatarCanvas.js?v=28';
 let globalAvatar3D = null;
 window.globalAvatar3D = null;
 
@@ -2823,6 +2823,9 @@ function activatePracticeStudio() {
       canvas.width = Math.floor(rect.width) * dpr;
       canvas.height = Math.floor(rect.height) * dpr;
     }
+  }
+  if (window.globalAvatar3D) {
+    window.globalAvatar3D.resize();
   }
 }
 
