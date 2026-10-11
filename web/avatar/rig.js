@@ -16,7 +16,7 @@
  * The hand shapes keep their chirality (no x flip), so no hand is ever mirrored.
  */
 import { Vector3, Quaternion } from 'three';
-import { BONE_NAMES, FINGER_NAMES, resolveBones, warnMissingBones } from './boneMap.js?v=30';
+import { BONE_NAMES, FINGER_NAMES, resolveBones, warnMissingBones } from './boneMap.js?v=32';
 import {
   HAND_UNIT_METERS,
   FINGER_BONE_COUNT,
@@ -361,7 +361,7 @@ export class AvatarRig {
     this._solveSide(this.right, rightLm || null, !!rightLm, pose ? pose.wristL : undefined, two);
     this._solveSide(this.left, leftLm || null, !!leftLm, pose ? pose.wristR : undefined, two);
 
-    const a = smoothAlpha(dt, 22);
+    const a = smoothAlpha(dt, 38);
     this._ease(this.right, a);
     this._ease(this.left, a);
     this._face(pose && pose.face, dt);
