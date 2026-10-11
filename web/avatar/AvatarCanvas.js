@@ -27,8 +27,8 @@ import {
 import { GLTFLoader } from '../vendor/three/examples/jsm/loaders/GLTFLoader.js';
 import { FBXLoader } from '../vendor/three/examples/jsm/loaders/FBXLoader.js';
 import { OrbitControls } from '../vendor/three/examples/jsm/controls/OrbitControls.js';
-import { AvatarRig } from './rig.js?v=32';
-import { BONE_NAMES } from './boneMap.js?v=32';
+import { AvatarRig } from './rig.js?v=33';
+import { BONE_NAMES } from './boneMap.js?v=33';
 
 export const DEFAULT_MODEL_URL = '/assets/Ch46_nonPBR.fbx';
 
@@ -88,32 +88,32 @@ export class AvatarCanvas {
     this.controls.maxAzimuthAngle = Math.PI * 0.22;
     this.controls.target.set(0, 1.35, 0);
 
-    // 5. Studio Lighting with vibrant brightness & clear facial clarity
-    this.hemiLight = new HemisphereLight(0xffffff, 0x334155, 0.95);
+    // 5. Balanced natural studio lighting (warm key + soft fill + subtle rim)
+    this.hemiLight = new HemisphereLight(0xffffff, 0x334155, 0.6);
     this.scene.add(this.hemiLight);
 
-    this.ambientLight = new AmbientLight(0xffffff, 0.75);
+    this.ambientLight = new AmbientLight(0xffffff, 0.45);
     this.scene.add(this.ambientLight);
 
     // Key light (warm, upper-right front)
-    this.keyLight = new DirectionalLight(0xfff8ee, 1.6);
-    this.keyLight.position.set(1.4, 2.6, 2.2);
+    this.keyLight = new DirectionalLight(0xfff8ee, 0.95);
+    this.keyLight.position.set(1.4, 2.4, 2.0);
     this.keyLight.castShadow = true;
     this.scene.add(this.keyLight);
 
     // Fill light (clean soft, upper-left front)
-    this.fillLight = new DirectionalLight(0xe0f2fe, 1.1);
-    this.fillLight.position.set(-1.5, 2.0, 1.8);
+    this.fillLight = new DirectionalLight(0xe0f2fe, 0.55);
+    this.fillLight.position.set(-1.4, 1.8, 1.5);
     this.scene.add(this.fillLight);
 
-    // Direct front eye-level fill to brighten face, eyes, and clothing
-    this.frontFill = new DirectionalLight(0xffffff, 0.85);
-    this.frontFill.position.set(0, 1.4, 2.5);
+    // Soft eye-level front fill (prevents harsh shadows without washing out face)
+    this.frontFill = new DirectionalLight(0xffffff, 0.35);
+    this.frontFill.position.set(0, 1.3, 2.2);
     this.scene.add(this.frontFill);
 
-    // Rim light (crisp backlight to separate hair and shoulders from background)
-    this.rimLight = new DirectionalLight(0xa5f3fc, 1.1);
-    this.rimLight.position.set(0, 2.4, -2.0);
+    // Rim light (subtle backlight separating hair and shoulders)
+    this.rimLight = new DirectionalLight(0xdbeafe, 0.5);
+    this.rimLight.position.set(0, 2.2, -1.8);
     this.scene.add(this.rimLight);
 
     // Theme observer
@@ -235,11 +235,11 @@ export class AvatarCanvas {
 
         const mats = Array.isArray(o.material) ? o.material : [o.material];
         for (const mat of mats) {
-          // If the model has textures, ensure optimal color space and brightness
+          // If the model has textures, ensure natural colors and accurate shading
           if (mat.map) {
             mat.map.colorSpace = SRGBColorSpace;
-            if (mat.color) mat.color.setRGB(1.2, 1.2, 1.2); // slight brightness boost
-            if (mat.roughness !== undefined && mat.roughness > 0.7) mat.roughness = 0.6;
+            if (mat.color) mat.color.setRGB(1.0, 1.0, 1.0); // natural texture albedo
+            if (mat.roughness !== undefined && mat.roughness > 0.8) mat.roughness = 0.7;
             mat.needsUpdate = true;
             continue;
           }
