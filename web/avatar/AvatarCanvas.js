@@ -1,4 +1,3 @@
-// @ts-check
 /**
  * AvatarCanvas: manages the Three.js viewport, scene, camera, lighting,
  * OrbitControls, and the AvatarRig lifecycle.

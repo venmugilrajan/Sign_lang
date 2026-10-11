@@ -1,4 +1,3 @@
-// @ts-check
 /**
  * Pure retargeting math (no DOM, no rendering) so it can be unit-tested in Node.
  *

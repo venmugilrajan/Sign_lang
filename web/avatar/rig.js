@@ -1,4 +1,3 @@
-// @ts-check
 /**
  * AvatarRig: drives a humanoid skeleton from sign data (MediaPipe-style landmarks).
  *

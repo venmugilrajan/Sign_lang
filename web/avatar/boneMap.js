@@ -1,4 +1,3 @@
-// @ts-check
 /**
  * Bone-name configuration for the 3D sign avatar.
  *
