@@ -27,10 +27,10 @@ import {
 import { GLTFLoader } from '../vendor/three/examples/jsm/loaders/GLTFLoader.js';
 import { FBXLoader } from '../vendor/three/examples/jsm/loaders/FBXLoader.js';
 import { OrbitControls } from '../vendor/three/examples/jsm/controls/OrbitControls.js';
-import { AvatarRig } from './rig.js?v=29';
-import { BONE_NAMES } from './boneMap.js?v=29';
+import { AvatarRig } from './rig.js?v=30';
+import { BONE_NAMES } from './boneMap.js?v=30';
 
-export const DEFAULT_MODEL_URL = '/assets/T-Pose.fbx';
+export const DEFAULT_MODEL_URL = '/assets/Ch46_nonPBR.fbx';
 
 export class AvatarCanvas {
   /**
@@ -218,7 +218,7 @@ export class AvatarCanvas {
   }
 
   _styleModel(root) {
-    // Elegant human styling: warm natural skin & dark navy clothing
+    // Elegant human styling: preserve embedded textures if present (e.g. Ch46 has face/hair/clothes textures)
     const darkNavy = new Color(0x18202f);
     const skinTone = new Color(0xdfa684);
     const jointAccent = new Color(0x2d3748);
@@ -227,19 +227,28 @@ export class AvatarCanvas {
       if (o.isMesh && o.material) {
         o.castShadow = true;
         o.receiveShadow = true;
-        const mat = o.material;
-        const name = (o.name || '').toLowerCase() + ' ' + (mat.name || '').toLowerCase();
 
-        if (name.includes('joint')) {
-          if (mat.color) mat.color.copy(jointAccent);
-          if (mat.shininess !== undefined) mat.shininess = 15;
-        } else if (name.includes('surface') || name.includes('limb') || name.includes('body')) {
-          if (mat.color) mat.color.copy(skinTone);
-          if (mat.specular) mat.specular.setHex(0x332219);
-          if (mat.shininess !== undefined) mat.shininess = 8;
-        } else if (name.includes('top') || name.includes('shirt') || name.includes('cloth') || name.includes('outfit_top')) {
-          if (mat.color) mat.color.copy(darkNavy);
-          if (mat.roughness !== undefined) mat.roughness = 0.85;
+        const mats = Array.isArray(o.material) ? o.material : [o.material];
+        for (const mat of mats) {
+          // If the model already has diffuse/albedo textures (like Ch46 with realistic face, hair, and clothing), keep them!
+          if (mat.map) {
+            mat.needsUpdate = true;
+            continue;
+          }
+
+          // Fallback styling for untextured dummy mannequins
+          const name = (o.name || '').toLowerCase() + ' ' + (mat.name || '').toLowerCase();
+          if (name.includes('joint')) {
+            if (mat.color) mat.color.copy(jointAccent);
+            if (mat.shininess !== undefined) mat.shininess = 15;
+          } else if (name.includes('surface') || name.includes('limb') || name.includes('body')) {
+            if (mat.color) mat.color.copy(skinTone);
+            if (mat.specular) mat.specular.setHex(0x332219);
+            if (mat.shininess !== undefined) mat.shininess = 8;
+          } else if (name.includes('top') || name.includes('shirt') || name.includes('cloth') || name.includes('outfit_top')) {
+            if (mat.color) mat.color.copy(darkNavy);
+            if (mat.roughness !== undefined) mat.roughness = 0.85;
+          }
         }
       }
     });
