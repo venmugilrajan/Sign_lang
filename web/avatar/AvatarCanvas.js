@@ -144,6 +144,14 @@ export class AvatarCanvas {
     this.controls.maxAzimuthAngle = Math.PI * 0.22;
     this.controls.target.set(0, 1.35, 0);
 
+    // On touch devices (smartphones/tablets), do NOT block single-finger vertical swipes so page scrolling works smoothly!
+    const isTouch = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0);
+    if (isTouch && this.controls.touches) {
+      this.controls.touches.ONE = null; // Don't hijack 1-finger swipe, let browser scroll page vertically!
+      this.controls.touches.TWO = 1;    // 2-finger touch can still rotate
+    }
+    this.canvas.style.touchAction = 'pan-y';
+
     // 5. Balanced natural studio lighting (warm key + soft fill + subtle rim)
     this.hemiLight = new HemisphereLight(0xffffff, 0x334155, 0.6);
     this.scene.add(this.hemiLight);

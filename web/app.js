@@ -6,7 +6,7 @@
  */
 
 // ── Avatar 3D Module ────────────────────────────────────────────────────────
-import { AvatarCanvas } from './avatar/AvatarCanvas.js?v=31';
+import { AvatarCanvas } from './avatar/AvatarCanvas.js?v=32';
 let globalAvatar3D = null;
 window.globalAvatar3D = null;
 
@@ -2013,7 +2013,17 @@ function initPracticeStudio() {
     if (autoPlay) {
       startPlayback();
     } else {
-      jumpToStep(0);
+      // While typing, update pose & chips without any aggressive scroll triggering
+      practiceCurrentIndex = 0;
+      const char = practiceSequence[0] || 'REST';
+      practiceToPose = clonePose(getTemplatePose(char === ' ' ? 'REST' : char));
+      practiceFromPose = practiceCurrentPose ? clonePose(practiceCurrentPose) : clonePose(getTemplatePose('REST'));
+      practiceStepStartTime = performance.now();
+      renderSequenceChips();
+      updateHUD();
+      if (sequenceChipsContainer) {
+        sequenceChipsContainer.scrollLeft = 0;
+      }
     }
   }
 
@@ -2129,10 +2139,12 @@ function initPracticeStudio() {
     renderSequenceChips();
     updateHUD();
 
-    // Scroll active chip into view
+    // Scroll active chip into view horizontally inside sequenceChipsContainer ONLY
+    // NEVER use activeChip.scrollIntoView() because it forces the entire window/page to scroll down!
     const activeChip = sequenceChipsContainer ? sequenceChipsContainer.children[practiceCurrentIndex] : null;
-    if (activeChip && activeChip.scrollIntoView) {
-      activeChip.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
+    if (activeChip && sequenceChipsContainer && typeof sequenceChipsContainer.scrollTo === 'function') {
+      const targetScroll = activeChip.offsetLeft - (sequenceChipsContainer.clientWidth - activeChip.clientWidth) / 2;
+      sequenceChipsContainer.scrollTo({ left: Math.max(0, targetScroll), behavior: 'smooth' });
     }
   }
 
