@@ -6,7 +6,7 @@
  */
 
 // ── Avatar 3D Module ────────────────────────────────────────────────────────
-import { AvatarCanvas } from './avatar/AvatarCanvas.js?v=29';
+import { AvatarCanvas } from './avatar/AvatarCanvas.js?v=30';
 let globalAvatar3D = null;
 window.globalAvatar3D = null;
 
@@ -1683,6 +1683,11 @@ function initPracticeStudio() {
           restHand: restHand,
           onProgress: (xhr) => {
             if (!loadingBar || !loadingStatus) return;
+            if (xhr && xhr.fromCache) {
+              loadingBar.style.width = '100%';
+              loadingStatus.textContent = 'Instant load from local cache (0 MB downloaded)…';
+              return;
+            }
             if (xhr && xhr.lengthComputable && xhr.total > 0) {
               const pct = Math.min(100, Math.round((xhr.loaded / xhr.total) * 100));
               const loadedMB = (xhr.loaded / (1024 * 1024)).toFixed(1);
