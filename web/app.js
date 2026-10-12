@@ -6,7 +6,7 @@
  */
 
 // ── Avatar 3D Module ────────────────────────────────────────────────────────
-import { AvatarCanvas } from './avatar/AvatarCanvas.js?v=32';
+import { AvatarCanvas } from './avatar/AvatarCanvas.js?v=33';
 let globalAvatar3D = null;
 window.globalAvatar3D = null;
 

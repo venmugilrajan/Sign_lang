@@ -23,6 +23,7 @@ import {
   SRGBColorSpace,
   PCFSoftShadowMap,
   Vector3,
+  TOUCH,
 } from 'three';
 import { GLTFLoader } from '../vendor/three/examples/jsm/loaders/GLTFLoader.js';
 import { FBXLoader } from '../vendor/three/examples/jsm/loaders/FBXLoader.js';
@@ -129,28 +130,72 @@ export class AvatarCanvas {
     this.updateThemeBackground();
 
     // 3. Camera (waist-up, slightly low angle)
-    this.camera = new PerspectiveCamera(32, 1, 0.1, 20);
-    this.camera.position.set(0, 1.25, 1.85);
+    this.camera = new PerspectiveCamera(30, 1, 0.1, 20);
+    this.camera.position.set(0, 1.28, 1.5);
 
-    // 4. OrbitControls: small horizontal rotation only, no zoom, no pan
+    // 4. OrbitControls: smooth horizontal rotation, no zoom, no pan
     this.controls = new OrbitControls(this.camera, this.canvas);
     this.controls.enableDamping = true;
     this.controls.dampingFactor = 0.08;
     this.controls.enableZoom = false;
     this.controls.enablePan = false;
+    this.controls.rotateSpeed = 0.85;
     this.controls.minPolarAngle = Math.PI * 0.44; // lock vertical angle
     this.controls.maxPolarAngle = Math.PI * 0.52;
-    this.controls.minAzimuthAngle = -Math.PI * 0.22; // ~40 deg left/right only
-    this.controls.maxAzimuthAngle = Math.PI * 0.22;
+    this.controls.minAzimuthAngle = -Math.PI * 0.55; // ~100 deg left/right rotation
+    this.controls.maxAzimuthAngle = Math.PI * 0.55;
     this.controls.target.set(0, 1.35, 0);
 
-    // On touch devices (smartphones/tablets), do NOT block single-finger vertical swipes so page scrolling works smoothly!
-    const isTouch = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0);
-    if (isTouch && this.controls.touches) {
-      this.controls.touches.ONE = null; // Don't hijack 1-finger swipe, let browser scroll page vertically!
-      this.controls.touches.TWO = 1;    // 2-finger touch can still rotate
+    // Enable touch rotation on mobile: 1 finger smoothly rotates horizontally
+    if (this.controls.touches) {
+      this.controls.touches.ONE = TOUCH.ROTATE;
+      this.controls.touches.TWO = TOUCH.DOLLY_PAN;
     }
     this.canvas.style.touchAction = 'pan-y';
+
+    // Touch disambiguation: allow 1-finger horizontal rotation of 3D model,
+    // while seamlessly allowing vertical scrolling of the webpage!
+    let touchStartX = 0;
+    let touchStartY = 0;
+    let gestureDecided = false;
+
+    this._onPointerDown = (e) => {
+      if (e.pointerType === 'touch') {
+        touchStartX = e.clientX;
+        touchStartY = e.clientY;
+        gestureDecided = false;
+      }
+    };
+
+    this._onPointerMove = (e) => {
+      if (e.pointerType === 'touch' && !gestureDecided) {
+        const dx = Math.abs(e.clientX - touchStartX);
+        const dy = Math.abs(e.clientY - touchStartY);
+        if (dx > 6 || dy > 6) {
+          gestureDecided = true;
+          if (dy > dx * 1.15) {
+            // Predominantly vertical swipe -> browser page scroll!
+            try {
+              if (this.canvas.hasPointerCapture && this.canvas.hasPointerCapture(e.pointerId)) {
+                this.canvas.releasePointerCapture(e.pointerId);
+              }
+            } catch (_) {}
+            if (this.controls && this.controls.state !== undefined) {
+              this.controls.state = -1; // reset OrbitControls state
+            }
+          }
+        }
+      }
+    };
+
+    this._onPointerEnd = () => {
+      gestureDecided = false;
+    };
+
+    this.canvas.addEventListener('pointerdown', this._onPointerDown, { passive: true });
+    this.canvas.addEventListener('pointermove', this._onPointerMove, { passive: true });
+    this.canvas.addEventListener('pointerup', this._onPointerEnd, { passive: true });
+    this.canvas.addEventListener('pointercancel', this._onPointerEnd, { passive: true });
 
     // 5. Balanced natural studio lighting (warm key + soft fill + subtle rim)
     this.hemiLight = new HemisphereLight(0xffffff, 0x334155, 0.6);
@@ -222,12 +267,9 @@ export class AvatarCanvas {
     if (this.renderer) this.renderer.setSize(w, h, false);
     if (this.camera) {
       this.camera.aspect = w / h;
-      // In portrait/mobile viewports, adapt vertical FOV so character arms and hands remain nicely in frame
-      if (this.camera.aspect < 1.0) {
-        this.camera.fov = Math.min(46, Math.max(32, 32 / this.camera.aspect));
-      } else {
-        this.camera.fov = 32;
-      }
+      // In portrait/mobile viewports, keep FOV snug (30 deg) so character is large and prominent
+      const isMobile = (typeof window !== 'undefined' && window.innerWidth <= 768);
+      this.camera.fov = isMobile ? 30 : 32;
       this.camera.updateProjectionMatrix();
     }
   }
@@ -417,15 +459,18 @@ export class AvatarCanvas {
   }
 
   _frameWaistUp(layout) {
+    this._layout = layout;
+    const isMobile = (typeof window !== 'undefined' && window.innerWidth <= 768);
     // Focus target at chest/neck center so face and both hands remain centered
     const targetY = (layout.headY + layout.hipsY) * 0.53;
     this.controls.target.set(layout.centerX, targetY, layout.centerZ);
 
-    // Frame camera: comfortable waist-up view showing both arms, hands, and head
-    const span = Math.max(layout.shoulderSpan || 0.35, (layout.armLength || 0.55) * 1.4);
-    const dist = Math.max(1.85, span * 2.3);
-    this.camera.fov = 34;
-    this.camera.position.set(layout.centerX, targetY + 0.05, layout.centerZ + dist);
+    // Frame camera: close waist-up view showing both arms, hands, and head prominently
+    const span = Math.max(layout.shoulderSpan || 0.35, (layout.armLength || 0.55) * 1.25);
+    // On mobile, position camera closer (1.40m - 1.45m) so character is significantly larger
+    const dist = isMobile ? Math.max(1.40, span * 1.82) : Math.max(1.58, span * 2.05);
+    this.camera.fov = isMobile ? 30 : 32;
+    this.camera.position.set(layout.centerX, targetY + 0.03, layout.centerZ + dist);
     this.camera.lookAt(this.controls.target);
     this.camera.updateProjectionMatrix();
     this.controls.update();
@@ -509,6 +554,12 @@ export class AvatarCanvas {
     }
     if (this.animFrameId) cancelAnimationFrame(this.animFrameId);
     if (this._themeObserver) this._themeObserver.disconnect();
+    if (this._onPointerDown && this.canvas) {
+      this.canvas.removeEventListener('pointerdown', this._onPointerDown);
+      this.canvas.removeEventListener('pointermove', this._onPointerMove);
+      this.canvas.removeEventListener('pointerup', this._onPointerEnd);
+      this.canvas.removeEventListener('pointercancel', this._onPointerEnd);
+    }
     if (this.controls) this.controls.dispose();
 
     // Clean up Three.js objects
