@@ -1,6 +1,7 @@
 """
-Convert PDF -> DOCX via Word COM, then use python-docx to do XML-level text 
-replacement across ALL elements (paragraphs, tables, shapes, textboxes).
+Generate Form 1 for our project:
+Convert template PDF -> DOCX via Word COM, apply XML text replacements,
+apply faculty/student slot fixes, and convert final DOCX -> PDF.
 """
 import os, sys, time, re
 sys.stdout.reconfigure(encoding='utf-8')
@@ -10,10 +11,13 @@ TEMP_DOCX = os.path.abspath('r:/Projects/Sign Language/PATENT/_temp_form1_raw.do
 DST_DOCX = os.path.abspath('r:/Projects/Sign Language/PATENT/Form 1_our_project.docx')
 DST_PDF = os.path.abspath('r:/Projects/Sign Language/PATENT/Form 1_our_project.pdf')
 
-# Clean
+# Clean existing
 for f in [TEMP_DOCX, DST_DOCX, DST_PDF]:
     if os.path.exists(f):
-        os.remove(f)
+        try:
+            os.remove(f)
+        except Exception:
+            pass
 
 # ========== STEP 1: PDF -> raw DOCX via Word COM ==========
 import win32com.client
@@ -31,10 +35,12 @@ time.sleep(1)
 from lxml import etree
 import zipfile, shutil
 
+NEW_TITLE = 'AN EMBEDDED EDGE-AI KIOSK APPARATUS AND WIRELESS SENSOR GLOVE SYSTEM FOR REAL-TIME BIDIRECTIONAL SIGN LANGUAGE TRANSLATION USING MULTI-MODAL SENSOR FUSION AND NEURAL INFERENCE'
+
 REPLACEMENTS = [
-    # Title
-    ('ORAL DENTAL COMPOSITION OF WHEATGRASS (TRITICUM AESTIVUM) PHYTOEXTRACT FOR DENTAL PAIN MANAGEMENT',
-     'A REAL-TIME VISION-BASED DUAL-HAND SIGN LANGUAGE RECOGNITION SYSTEM USING GEOMETRIC LANDMARKS AND MULTI-LAYER PERCEPTRON'),
+    # Title replacements
+    ('ORAL DENTAL COMPOSITION OF WHEATGRASS (TRITICUM AESTIVUM) PHYTOEXTRACT FOR DENTAL PAIN MANAGEMENT', NEW_TITLE),
+    ('A REAL-TIME VISION-BASED DUAL-HAND SIGN LANGUAGE RECOGNITION SYSTEM USING GEOMETRIC LANDMARKS AND MULTI-LAYER PERCEPTRON', NEW_TITLE),
     
     # Names
     ('SHOBANA KRISHNAKUMAR', 'KAYALVIZHI'),
@@ -55,29 +61,29 @@ REPLACEMENTS = [
     ('Endodontics', 'Engineering'),
     
     # Date
-    ('15th day of July, 2026', '2nd day of October, 2026'),
+    ('15th day of July, 2026', '11th day of October, 2026'),
+    ('2nd day of October, 2026', '11th day of October, 2026'),
     
     # Counts
-    ('No. of pages ( 20 )', 'No. of pages ( 8 )'),
-    ('20+2+1+7 = 30', '8+2+1+2 = 13'),
-    ('No. of drawings ( 10 )', 'No. of drawings ( 2 )'),
-    ('pages ( 7 )', 'pages ( 2 )'),
+    ('No. of pages ( 20 )', 'No. of pages ( 12 )'),
+    ('No. of pages ( 8 )', 'No. of pages ( 12 )'),
+    ('20+2+1+7 = 30', '12+2+1+4 = 19'),
+    ('8+2+1+2 = 13', '12+2+1+4 = 19'),
+    ('No. of drawings ( 10 )', 'No. of drawings ( 4 )'),
+    ('No. of drawings ( 2 )', 'No. of drawings ( 4 )'),
+    ('pages ( 7 )', 'pages ( 4 )'),
+    ('pages ( 2 )', 'pages ( 4 )'),
 ]
 
 def replace_in_xml(xml_bytes, replacements):
     """Replace text in all <w:t> elements across the entire XML."""
     tree = etree.fromstring(xml_bytes)
     ns = {'w': 'http://schemas.openxmlformats.org/wordprocessingml/2006/main'}
-    
-    # Strategy: For each paragraph-like element, concatenate all <w:t> text,
-    # do replacements, then redistribute back to <w:t> elements.
-    # This handles text split across multiple runs.
-    
-    # First pass: simple per-run replacement
     count = 0
+
+    # First pass: simple per-run replacement
     for t_elem in tree.iter('{http://schemas.openxmlformats.org/wordprocessingml/2006/main}t'):
         if t_elem.text:
-            original = t_elem.text
             for old, new in replacements:
                 if old in t_elem.text:
                     t_elem.text = t_elem.text.replace(old, new)
@@ -89,7 +95,6 @@ def replace_in_xml(xml_bytes, replacements):
         if not runs:
             continue
         
-        # Get all text
         t_elems = []
         for r in runs:
             t = r.find('w:t', ns)
@@ -108,42 +113,61 @@ def replace_in_xml(xml_bytes, replacements):
                 changed = True
         
         if changed:
-            # Put all text in the first <w:t>, clear the rest
             t_elems[0].text = new_text
             t_elems[0].set('{http://www.w3.org/XML/1998/namespace}space', 'preserve')
             for t in t_elems[1:]:
                 t.text = ''
             count += 1
+            
+    # Fix KAYALVIZHI slot and student roles directly in the tree
+    ns_w = '{http://schemas.openxmlformats.org/wordprocessingml/2006/main}'
+    all_t = list(tree.iter(ns_w + 't'))
+    for i, t in enumerate(all_t):
+        txt = t.text or ''
+        if 'Faculty' in txt and 'Dept' in txt:
+            for j in range(i-1, max(0, i-10), -1):
+                prev = (all_t[j].text or '').strip()
+                if prev == '':
+                    all_t[j].text = 'KAYALVIZHI'
+                    count += 1
+                    break
+            break
+
+    for i, t in enumerate(all_t):
+        txt = t.text or ''
+        if 'VENMUGIL RAJAN S' in txt:
+            for j in range(i+1, min(len(all_t), i+10)):
+                jtxt = all_t[j].text or ''
+                if 'Faculty' in jtxt:
+                    all_t[j].text = jtxt.replace('Faculty', 'Student')
+                    count += 1
+                    break
+            break
     
     return etree.tostring(tree, xml_declaration=True, encoding='UTF-8', standalone=True), count
 
-# Process the DOCX (which is a ZIP)
-shutil.copy2(TEMP_DOCX, DST_DOCX)
-
+# Process the DOCX
 total = 0
 with zipfile.ZipFile(TEMP_DOCX, 'r') as zin:
     with zipfile.ZipFile(DST_DOCX, 'w', zipfile.ZIP_DEFLATED) as zout:
         for item in zin.infolist():
             data = zin.read(item.filename)
-            
-            # Process all XML files that could contain text
             if item.filename.endswith('.xml') or item.filename.endswith('.rels'):
                 try:
                     if b'<w:t' in data or b'w:t>' in data:
                         new_data, count = replace_in_xml(data, REPLACEMENTS)
                         if count > 0:
-                            print(f"  Modified {item.filename} ({count} replacements)")
                             total += count
                             data = new_data
-                except Exception as e:
-                    pass  # Not a Word XML file, skip
-            
+                except Exception:
+                    pass
             zout.writestr(item, data)
 
-print(f"\nStep 2 done: {total} XML-level replacements")
+print(f"Step 2 done: {total} XML-level replacements")
 
 # Clean temp
-os.remove(TEMP_DOCX)
+if os.path.exists(TEMP_DOCX):
+    os.remove(TEMP_DOCX)
 
 # ========== STEP 3: Convert final DOCX to PDF ==========
 time.sleep(1)
@@ -168,4 +192,4 @@ for name in ['KAYALVIZHI', 'VENMUGIL RAJAN', 'BUVANESH', 'HARISH', 'SIGN LANGUAG
 for name in ['SHOBANA', 'SABAH', 'MITTHRA', 'MADHUBALA', 'ORAL DENTAL', 'Conservative Dentistry']:
     print(f"  {name}: {'STILL PRESENT (BAD)' if name in all_text else 'REMOVED OK'}")
 
-print("\nDONE!")
+print("\nForm 1 generation finished successfully!")

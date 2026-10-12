@@ -28,7 +28,7 @@ def build_design_form1():
     for row in doc.tables[1].rows:
         for cell in row.cells:
             if 'MANUAL AGRICULTURAL' in cell.text:
-                cell.text = "The design is to be applied to “EDGE-AI SIGN LANGUAGE TRANSLATION APPARATUS”."
+                cell.text = "The design is to be applied to “EDGE-AI SIGN LANGUAGE TRANSLATION KIOSK WITH WIRELESS SENSOR GLOVE”."
                 
     # Table 2: Date
     for row in doc.tables[2].rows:

@@ -19,6 +19,8 @@ sign language dataset 2/
 .DS_Store
 Thumbs.db
 *.log
+*.tmp
+~*.tmp
 
 # Dataset archives
 *.zip
@@ -31,6 +33,7 @@ models/*_cache.pkl
 # Temporary / Scratch
 ~$*.docx
 temp_drawing_media/
-test_fig.png
+test_*.*
+PATENT/test_*.*
 hf_export/*.pkl
 hf_space/

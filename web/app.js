@@ -1663,7 +1663,7 @@ function initPracticeStudio() {
       try {
         const restHand = practiceTemplates?.asl?.REST || null;
         globalAvatar3D = new AvatarCanvas(canvas3D, {
-          modelUrl: '/assets/Ch46_nonPBR.fbx',
+          modelUrl: './assets/Ch46_nonPBR.fbx',
           restHand: restHand,
           onReady: () => {
             console.log('[PracticeStudio] 3D Avatar active and tracking practice playback.');

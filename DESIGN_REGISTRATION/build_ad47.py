@@ -13,17 +13,28 @@ def build_ad47_direct():
     # P6: Title of the Article
     for r in doc.paragraphs[6].runs:
         if 'MANUAL AGRICULTURAL' in r.text:
-            r.text = r.text.replace('MANUAL AGRICULTURAL MATERIAL COLLECTOR WITH INCLINED BELT CONVEYOR', 'EDGE-AI SIGN LANGUAGE TRANSLATION APPARATUS')
+            r.text = r.text.replace('MANUAL AGRICULTURAL MATERIAL COLLECTOR WITH INCLINED BELT CONVEYOR', 'EDGE-AI SIGN LANGUAGE TRANSLATION KIOSK WITH WIRELESS SENSOR GLOVE')
             
     # P8: Brief Description
     for r in doc.paragraphs[8].runs:
         if 'The present design relates to a manual' in r.text:
-            r.text = 'The present design relates to a standalone, portable Edge-AI sign language translation apparatus comprising an ergonomic integrated housing, an optical sensor and illumination pod, a front interactive display screen for dynamic 3D sign demonstrations and subtitles, directional acoustic ports, rear thermal exhaust vents, and a stable beveled pedestal base for hands-free counter and desktop operation'
+            r.text = ('The present design relates to a portable counter-top Edge-AI sign language '
+                      'translation kiosk with a companion wireless sensor glove. The kiosk comprises '
+                      'a compact box-shaped enclosure with an angled privacy hood housing an integrated '
+                      'depth camera and dual MEMS microphone array, a front-facing 10-inch angled '
+                      'touchscreen display for dynamic 3D sign avatar demonstrations and real-time '
+                      'subtitles, a directional speaker grille, rear thermal exhaust ventilation, '
+                      'I/O bay with IEC power inlet, Ethernet and Kensington lock, and a heavy '
+                      'anti-tip weighted base with cable management channel and anti-slip rubber feet. '
+                      'The companion wireless sensor glove features five resistive flex sensors along '
+                      'each finger dorsum, a 9-axis IMU (accelerometer, gyroscope, magnetometer) on a '
+                      'wrist-mounted PCB module, Bluetooth Low Energy transmitter, rechargeable LiPo '
+                      'cell, LED status indicator, and an adjustable velcro wrist closure strap')
             
     # P10: Statement of Novelty
     for r in doc.paragraphs[10].runs:
         if 'MANUAL AGRICULTURAL' in r.text:
-            r.text = 'EDGE-AI SIGN LANGUAGE TRANSLATION APPARATUS'
+            r.text = 'EDGE-AI SIGN LANGUAGE TRANSLATION KIOSK WITH WIRELESS SENSOR GLOVE'
             
     # P14: Date
     for r in doc.paragraphs[14].runs:
@@ -41,7 +52,7 @@ def build_ad47_direct():
         word = win32com.client.DispatchEx("Word.Application")
         word.Visible = False
         wdoc = word.Documents.Open(os.path.abspath(out_docx))
-        wdoc.SaveAs(os.path.abspath(out_pdf), FileFormat=17) # 17 = wdFormatPDF
+        wdoc.SaveAs(os.path.abspath(out_pdf), FileFormat=17)
         wdoc.Close()
         word.Quit()
         print(f"Successfully converted to PDF: {out_pdf}")

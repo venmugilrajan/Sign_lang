@@ -30,7 +30,7 @@ import { OrbitControls } from '../vendor/three/examples/jsm/controls/OrbitContro
 import { AvatarRig } from './rig.js?v=33';
 import { BONE_NAMES } from './boneMap.js?v=33';
 
-export const DEFAULT_MODEL_URL = '/assets/Ch46_nonPBR.fbx';
+export const DEFAULT_MODEL_URL = './assets/Ch46_nonPBR.fbx';
 
 export class AvatarCanvas {
   /**
