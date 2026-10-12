@@ -9,7 +9,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600;700&family=Geist+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="style.css?v=23" />
+  <link rel="stylesheet" href="style.css?v=24" />
 
   <!-- Three.js pinned local importmap (no CDN) -->
   <script type="importmap">
@@ -226,6 +226,20 @@
     <div class="avatar-viewport">
       <canvas id="avatar-canvas-3d"></canvas>
       <canvas id="avatar-canvas"></canvas>
+
+      <!-- 3D Avatar Loading Indicator Overlay -->
+      <div class="avatar-3d-loading-overlay" id="avatar-3d-loading-overlay">
+        <div class="avatar-loading-box">
+          <div class="avatar-loading-spinner-ring">
+            <div class="avatar-loading-core-dot"></div>
+          </div>
+          <div class="avatar-loading-title">Initializing 3D Sign Studio</div>
+          <div class="avatar-loading-subtitle" id="avatar-loading-status">Downloading 3D avatar assets…</div>
+          <div class="avatar-loading-progress-track">
+            <div class="avatar-loading-progress-bar" id="avatar-loading-bar"></div>
+          </div>
+        </div>
+      </div>
 
       <!-- Active Letter Glow Badge -->
       <div class="avatar-hud-letter" id="avatar-hud-letter">
@@ -500,6 +514,6 @@
 </dialog>
 
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
-<script type="module" src="app.js?v=33"></script>
+<script type="module" src="app.js?v=34"></script>
 </body>
 </html>

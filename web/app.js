@@ -6,7 +6,7 @@
  */
 
 // ── Avatar 3D Module ────────────────────────────────────────────────────────
-import { AvatarCanvas } from './avatar/AvatarCanvas.js?v=28';
+import { AvatarCanvas } from './avatar/AvatarCanvas.js?v=29';
 let globalAvatar3D = null;
 window.globalAvatar3D = null;
 
@@ -1650,14 +1650,30 @@ function initPracticeStudio() {
     });
 
   function initAvatar3DRenderer() {
+    const loadingOverlay = document.getElementById('avatar-3d-loading-overlay');
+    const loadingStatus = document.getElementById('avatar-loading-status');
+    const loadingBar = document.getElementById('avatar-loading-bar');
+    const avatarStatusText = document.getElementById('avatar-status-text');
+
     if (window.USE_3D_AVATAR === false) {
       if (globalAvatar3D) {
         globalAvatar3D.dispose();
         globalAvatar3D = null;
         window.globalAvatar3D = null;
       }
+      window._avatar3DFallbackActive = true;
+      if (loadingOverlay) loadingOverlay.style.display = 'none';
+      drawAvatar();
       return;
     }
+
+    window._avatar3DFallbackActive = false;
+    if (loadingOverlay) {
+      loadingOverlay.classList.remove('loaded');
+      loadingOverlay.style.display = 'flex';
+    }
+    if (avatarStatusText) avatarStatusText.textContent = 'Loading 3D…';
+
     const canvas3D = document.getElementById('avatar-canvas-3d');
     if (!globalAvatar3D && canvas3D) {
       try {
@@ -1665,19 +1681,51 @@ function initPracticeStudio() {
         globalAvatar3D = new AvatarCanvas(canvas3D, {
           modelUrl: './assets/Ch46_nonPBR.fbx',
           restHand: restHand,
+          onProgress: (xhr) => {
+            if (!loadingBar || !loadingStatus) return;
+            if (xhr && xhr.lengthComputable && xhr.total > 0) {
+              const pct = Math.min(100, Math.round((xhr.loaded / xhr.total) * 100));
+              const loadedMB = (xhr.loaded / (1024 * 1024)).toFixed(1);
+              const totalMB = (xhr.total / (1024 * 1024)).toFixed(1);
+              loadingBar.style.width = pct + '%';
+              loadingStatus.textContent = `Downloading 3D Studio Avatar (${pct}% • ${loadedMB}/${totalMB} MB)…`;
+            } else if (xhr && xhr.loaded > 0) {
+              const loadedMB = (xhr.loaded / (1024 * 1024)).toFixed(1);
+              loadingStatus.textContent = `Downloading 3D Studio Avatar (${loadedMB} MB)…`;
+              loadingBar.style.width = '70%';
+            }
+          },
           onReady: () => {
             console.log('[PracticeStudio] 3D Avatar active and tracking practice playback.');
             if (ctx && canvas) {
               ctx.clearRect(0, 0, canvas.width, canvas.height);
             }
+            if (avatarStatusText) avatarStatusText.textContent = 'Ready';
+            if (loadingBar) loadingBar.style.width = '100%';
+            if (loadingStatus) loadingStatus.textContent = '3D Avatar Ready!';
+            if (loadingOverlay) {
+              loadingOverlay.classList.add('loaded');
+              setTimeout(() => {
+                if (loadingOverlay && loadingOverlay.classList.contains('loaded')) {
+                  loadingOverlay.style.display = 'none';
+                }
+              }, 450);
+            }
           },
           onError: (err) => {
-            console.info('[PracticeStudio] Falling back to 2D character renderer while 3D model is not present.');
+            console.info('[PracticeStudio] Falling back to 2D character renderer while 3D model is not present:', err);
+            window._avatar3DFallbackActive = true;
+            if (loadingOverlay) loadingOverlay.style.display = 'none';
+            if (avatarStatusText) avatarStatusText.textContent = 'Ready (2D)';
+            drawAvatar();
           }
         });
         window.globalAvatar3D = globalAvatar3D;
       } catch (err) {
         console.warn('[PracticeStudio] Failed to initialize Three.js AvatarCanvas:', err);
+        window._avatar3DFallbackActive = true;
+        if (loadingOverlay) loadingOverlay.style.display = 'none';
+        drawAvatar();
       }
     }
   }
@@ -2227,8 +2275,8 @@ function initPracticeStudio() {
       }
     }
 
-    // When 3D Avatar has loaded its rig and is rendering via WebGL, skip 2D canvas drawing
-    if (globalAvatar3D && globalAvatar3D.rig) return;
+    // When 3D Avatar is enabled and active, skip 2D canvas drawing completely
+    if (window.USE_3D_AVATAR !== false && !window._avatar3DFallbackActive) return;
 
     drawAvatar();
   }
@@ -2322,6 +2370,12 @@ function initPracticeStudio() {
     const dpr = window.devicePixelRatio || 1;
     const w = canvas.width;
     const h = canvas.height;
+
+    // Strict Guard: When 3D mode is active, keep 2D canvas strictly cleared so the old model never flashes
+    if (window.USE_3D_AVATAR !== false && !window._avatar3DFallbackActive) {
+      ctx.clearRect(0, 0, w, h);
+      return;
+    }
 
     ctx.save();
     ctx.clearRect(0, 0, w, h);

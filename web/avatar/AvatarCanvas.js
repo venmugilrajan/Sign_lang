@@ -49,6 +49,7 @@ export class AvatarCanvas {
     this.restHand = options.restHand || null;
     this.onReady = options.onReady || null;
     this.onError = options.onError || null;
+    this.onProgress = options.onProgress || null;
 
     this.disposed = false;
     this.rig = null;
@@ -208,15 +209,24 @@ export class AvatarCanvas {
       if (this.onError) this.onError(err);
     };
 
+    const onProgress = (xhr) => {
+      if (this.disposed) return;
+      if (this.onProgress) {
+        try {
+          this.onProgress(xhr);
+        } catch (_) {}
+      }
+    };
+
     if (isFbx) {
       const loader = new FBXLoader();
-      loader.load(this.modelUrl, onLoaded, undefined, onError);
+      loader.load(this.modelUrl, onLoaded, onProgress, onError);
     } else {
       const loader = new GLTFLoader();
       loader.load(
         this.modelUrl,
         (gltf) => onLoaded(gltf.scene || gltf.scenes[0]),
-        undefined,
+        onProgress,
         onError
       );
     }
