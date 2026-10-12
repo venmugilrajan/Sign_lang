@@ -723,17 +723,28 @@ kbd {
   .rail { overflow: visible; }
   .viewport { flex: none; width: 100%; }
 
-  /* Practice Studio (VISUALLY) on tablet/laptop */
+  /* Practice Studio (VISUALLY) on tablet/mobile: 3D Avatar at TOP, controls BELOW */
   .visually-workspace {
+    display: flex !important;
+    flex-direction: column !important;
     grid-template-columns: minmax(0, 1fr) !important;
-    overflow: visible;
+    overflow: visible !important;
+    gap: 14px;
   }
-  .practice-input-rail {
+  .visually-workspace .practice-stage {
+    order: -1 !important; /* Move 3D Avatar to the top */
+    width: 100%;
+    flex: none;
+  }
+  .visually-workspace .practice-input-rail {
+    order: 1 !important; /* Move controls & timeline below */
+    width: 100%;
     overflow: visible;
   }
   .avatar-viewport {
-    min-height: 440px;
-    height: 480px;
+    min-height: 340px;
+    height: 48vh;
+    max-height: 460px;
   }
 }
 
@@ -1026,16 +1037,31 @@ kbd {
     padding: 0 6px;
   }
 
-  /* Practice 3D Avatar Stage on Mobile */
-  .practice-stage {
-    width: 100%;
-    height: auto;
+  /* Practice 3D Avatar Stage on Mobile: Avatar at TOP, Controls BELOW */
+  .visually-workspace {
+    display: flex !important;
+    flex-direction: column !important;
+    padding: 10px 12px 24px !important;
+    gap: 12px !important;
+  }
+
+  .visually-workspace .practice-stage {
+    order: -1 !important; /* Move 3D Avatar to the very top */
+    width: 100% !important;
+    height: auto !important;
+    margin-bottom: 4px !important;
+  }
+
+  .visually-workspace .practice-input-rail {
+    order: 1 !important; /* Controls, text input, timeline placed below */
+    width: 100% !important;
+    overflow: visible !important;
   }
 
   .avatar-viewport {
-    min-height: 360px;
-    height: 52vh;
-    max-height: 500px;
+    min-height: 300px;
+    height: 44vh;
+    max-height: 420px;
     border-radius: 14px;
     position: relative;
     overflow: hidden;

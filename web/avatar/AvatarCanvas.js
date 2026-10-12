@@ -180,6 +180,12 @@ export class AvatarCanvas {
     this.resize = this.resize.bind(this);
     window.addEventListener('resize', this.resize);
 
+    // Responsive container ResizeObserver (handles mobile orientation & keyboard layout changes)
+    if (typeof ResizeObserver !== 'undefined' && this.canvas.parentElement) {
+      this._resizeObserver = new ResizeObserver(() => this.resize());
+      this._resizeObserver.observe(this.canvas.parentElement);
+    }
+
     // Initial resize
     this.resize();
 
@@ -208,6 +214,12 @@ export class AvatarCanvas {
     if (this.renderer) this.renderer.setSize(w, h, false);
     if (this.camera) {
       this.camera.aspect = w / h;
+      // In portrait/mobile viewports, adapt vertical FOV so character arms and hands remain nicely in frame
+      if (this.camera.aspect < 1.0) {
+        this.camera.fov = Math.min(46, Math.max(32, 32 / this.camera.aspect));
+      } else {
+        this.camera.fov = 32;
+      }
       this.camera.updateProjectionMatrix();
     }
   }
@@ -483,6 +495,10 @@ export class AvatarCanvas {
   dispose() {
     this.disposed = true;
     window.removeEventListener('resize', this.resize);
+    if (this._resizeObserver) {
+      this._resizeObserver.disconnect();
+      this._resizeObserver = null;
+    }
     if (this.animFrameId) cancelAnimationFrame(this.animFrameId);
     if (this._themeObserver) this._themeObserver.disconnect();
     if (this.controls) this.controls.dispose();
