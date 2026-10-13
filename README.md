@@ -1,6 +1,6 @@
 # 🤟 SignLens — Real-Time Sign Language Recognition & Auto-Framing Engine
 
-A production-grade, real-time American Sign Language (ASL) and Indian Sign Language (ISL) translator using **MediaPipe 3D Hand Landmarks**, Neural Network Classifiers, and an **End-to-End Letter-to-Word Auto-Framing & Spellchecking Pipeline**.
+A production-grade, real-time American Sign Language (ASL) and Indian Sign Language (ISL) translator using **MediaPipe 3D Hand Landmarks**, Neural Network Classifiers, and an **End-to-End Letter-to-Word Auto-Framing & Spellchecking Pipeline**. 
 
 SignLens provides high-efficiency geometric landmark models for real-time translation of **Indian Sign Language (ISL)** and **American Sign Language (ASL)**. Unlike heavy Vision Transformers (ViT) or 300MB+ CNNs that struggle to maintain interactive frame rates on consumer devices, SignLens operates on **MediaPipe 3D hand coordinates (21 joints per hand)**. It achieves **98.05% held-out test accuracy on ISL** and **100.0% accuracy on ASL** while running at **60+ FPS** directly in web browsers (via WebGL/WASM) and lightweight edge CPUs.
 
