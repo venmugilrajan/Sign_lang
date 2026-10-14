@@ -1,4 +1,4 @@
-# 🤟 SignLens — Real-Time Sign Language Recognition & Auto-Framing Engine
+# 🤟 SignLens — Real-Time Sign Language Recognition & Auto-Framing Engine 
 
 A production-grade, real-time American Sign Language (ASL) and Indian Sign Language (ISL) translator using **MediaPipe 3D Hand Landmarks**, Neural Network Classifiers, and an **End-to-End Letter-to-Word Auto-Framing & Spellchecking Pipeline**. 
 
