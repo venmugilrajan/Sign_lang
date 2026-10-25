@@ -541,14 +541,99 @@ kbd, .word-chip, .cam-error-code {
   word-break: break-all;
 }
 
+
+.select-lang-inline {
+  background: var(--surface-2);
+  border: 1px solid var(--line-bright);
+  color: var(--text-base);
+  border-radius: var(--r-sm, 6px);
+  padding: 3px 8px;
+  font-size: 0.78rem;
+  font-weight: 500;
+  cursor: pointer;
+  outline: none;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+.select-lang-inline:hover, .select-lang-inline:focus {
+  border-color: var(--accent);
+  background: var(--surface-3);
+}
+
 .sentence-display {
-  min-height: 74px;
-  padding: 12px 14px;
+  min-height: 110px;
   background: var(--bg);
   border: 1px solid var(--line);
   border-radius: var(--r-ctrl);
-  font-size: 1rem; line-height: 1.55;
-  text-wrap: pretty;
+  padding: 12px 14px;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  transition: all 0.2s ease;
+}
+
+/* When only English or no second language is selected, full width single view */
+.sentence-display.is-single {
+  grid-template-columns: 1fr;
+}
+
+.sentence-col {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+
+.sentence-col-orig {
+  min-width: 0;
+}
+
+.sentence-display:not(.is-single) .sentence-col-orig {
+  border-right: 1px solid var(--line);
+  padding-right: 14px;
+}
+
+.sentence-col-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.sentence-col-tag {
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--text-mute);
+}
+
+.sentence-display.is-single #sentence-orig-header {
+  display: none; /* Hide header pill when single English view to keep it clean */
+}
+
+.sentence-col-trans .sentence-col-tag {
+  color: var(--accent, #3b82f6);
+}
+
+.sentence-col-body {
+  font-size: 1.05rem;
+  line-height: 1.5;
+  color: var(--text-base);
+  font-weight: 500;
+  word-break: break-word;
+  white-space: pre-wrap;
+}
+
+.sentence-col-trans .translation-text {
+  font-size: 1.12rem;
+  font-weight: 600;
+  color: var(--accent, #3b82f6);
+}
+
+.translation-status {
+  font-size: 0.68rem;
+  color: var(--text-mute);
+  font-style: italic;
 }
 
 .ph { color: var(--text-mute); font-style: normal; letter-spacing: 0; font-size: 0.85rem; }

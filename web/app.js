@@ -97,9 +97,20 @@ const statusPill      = document.getElementById('status-pill');
 const statusText      = document.getElementById('status-text');
 const wordDisplay     = document.getElementById('word-display');
 const sentenceDisplay = document.getElementById('sentence-display');
+const sentenceOriginalText = document.getElementById('sentence-original-text');
 const wordChips       = document.getElementById('word-chips');
 const modeToggle      = document.getElementById('mode-toggle');
 const toast           = document.getElementById('toast');
+
+// Translation Elements & State
+const selectTargetLang    = document.getElementById('select-target-lang');
+const translationBox      = document.getElementById('translation-box');
+const translationLangTag  = document.getElementById('translation-lang-tag');
+const translationStatus   = document.getElementById('translation-status');
+const translationText     = document.getElementById('translation-text');
+let currentTargetLang     = 'en';
+let currentTranslatedText = '';
+let translateDebounceTimer = null;
 
 // ── Utilities ────────────────────────────────────────────────────────────────
 function showToast(msg, ms = 2000) {
@@ -128,16 +139,108 @@ function renderWord() {
     ? currentWord
     : '<span class="ph">Start signing…</span>';
 }
+
+const LANG_CONFIG = {
+  en: { name: 'English', voicePrefix: 'en', bcp47: 'en-US' },
+  ta: { name: 'Tamil', voicePrefix: 'ta', bcp47: 'ta-IN' },
+  hi: { name: 'Hindi', voicePrefix: 'hi', bcp47: 'hi-IN' },
+  te: { name: 'Telugu', voicePrefix: 'te', bcp47: 'te-IN' },
+  ml: { name: 'Malayalam', voicePrefix: 'ml', bcp47: 'ml-IN' },
+  kn: { name: 'Kannada', voicePrefix: 'kn', bcp47: 'kn-IN' },
+  es: { name: 'Spanish', voicePrefix: 'es', bcp47: 'es-ES' },
+  fr: { name: 'French', voicePrefix: 'fr', bcp47: 'fr-FR' },
+  de: { name: 'German', voicePrefix: 'de', bcp47: 'de-DE' },
+  ja: { name: 'Japanese', voicePrefix: 'ja', bcp47: 'ja-JP' },
+  zh: { name: 'Chinese', voicePrefix: 'zh', bcp47: 'zh-CN' },
+  ar: { name: 'Arabic', voicePrefix: 'ar', bcp47: 'ar-SA' },
+};
+
+async function updateTranslation() {
+  const isSameAsOriginal = (currentTargetLang === 'en');
+
+  if (isSameAsOriginal || !sentenceWords.length) {
+    if (sentenceDisplay) sentenceDisplay.classList.add('is-single');
+    if (translationBox) translationBox.style.display = 'none';
+    currentTranslatedText = '';
+    return;
+  }
+
+  const englishSentence = sentenceWords.join(' ').trim();
+  if (!englishSentence) {
+    if (sentenceDisplay) sentenceDisplay.classList.add('is-single');
+    if (translationBox) translationBox.style.display = 'none';
+    currentTranslatedText = '';
+    return;
+  }
+
+  const langInfo = LANG_CONFIG[currentTargetLang] || { name: currentTargetLang };
+  if (sentenceDisplay) sentenceDisplay.classList.remove('is-single');
+  if (translationBox) translationBox.style.display = 'flex';
+  if (translationLangTag) translationLangTag.textContent = `${langInfo.name}`;
+  if (translationStatus) translationStatus.textContent = 'Translating…';
+
+  try {
+    // Primary: Google Translate Engine (High accuracy for Indian & Global languages)
+    const gUrl = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=${currentTargetLang}&dt=t&q=${encodeURIComponent(englishSentence)}`;
+    const res = await fetch(gUrl);
+    if (!res.ok) throw new Error(`Google API status: ${res.status}`);
+    const data = await res.json();
+
+    if (data && data[0] && Array.isArray(data[0])) {
+      const translated = data[0].map(item => item[0]).filter(Boolean).join('');
+      if (translated) {
+        currentTranslatedText = translated;
+        if (translationText) translationText.textContent = currentTranslatedText;
+        if (translationStatus) translationStatus.textContent = '';
+        return;
+      }
+    }
+    throw new Error('Empty response from Google API');
+  } catch (primaryErr) {
+    console.warn('[SignLens] Primary Google translation failed, attempting fallback:', primaryErr);
+
+    // Fallback: MyMemory API
+    try {
+      const fbUrl = `https://api.mymemory.translated.net/get?q=${encodeURIComponent(englishSentence)}&langpair=en|${currentTargetLang}`;
+      const fbRes = await fetch(fbUrl);
+      const fbData = await fbRes.json();
+      if (fbData && fbData.responseData && fbData.responseData.translatedText) {
+        currentTranslatedText = fbData.responseData.translatedText;
+        if (translationText) translationText.textContent = currentTranslatedText;
+        if (translationStatus) translationStatus.textContent = '';
+        return;
+      }
+    } catch (fbErr) {
+      console.warn('[SignLens] All translation sources failed:', fbErr);
+    }
+
+    if (translationStatus) translationStatus.textContent = 'Translation unavailable';
+  }
+}
+
+function scheduleTranslation() {
+  clearTimeout(translateDebounceTimer);
+  translateDebounceTimer = setTimeout(updateTranslation, 350);
+}
+
 function renderSentence() {
-  sentenceDisplay.innerHTML = sentenceWords.length
+  const textHtml = sentenceWords.length
     ? sentenceWords.join(' ')
     : '<em class="ph">Your sentence will appear here…</em>';
+
+  if (sentenceOriginalText) {
+    sentenceOriginalText.innerHTML = textHtml;
+  } else if (sentenceDisplay) {
+    sentenceDisplay.innerHTML = textHtml;
+  }
+
   wordChips.innerHTML = '';
   sentenceWords.forEach(w => {
     const c = document.createElement('span');
     c.className = 'word-chip'; c.textContent = w;
     wordChips.appendChild(c);
   });
+  scheduleTranslation();
 }
 async function pushWord() {
   let w = currentWord.trim();
@@ -988,11 +1091,21 @@ function setupControls() {
   });
 
   document.getElementById('btn-copy').addEventListener('click', () => {
-    if (sentenceWords.length) {
-      navigator.clipboard.writeText(sentenceWords.join(' '));
+    const textToCopy = (currentTargetLang !== 'en' && currentTranslatedText)
+      ? currentTranslatedText
+      : sentenceWords.join(' ');
+    if (textToCopy) {
+      navigator.clipboard.writeText(textToCopy);
       showToast('📋 Copied to clipboard!');
     }
   });
+
+  if (selectTargetLang) {
+    selectTargetLang.addEventListener('change', (e) => {
+      currentTargetLang = e.target.value;
+      updateTranslation();
+    });
+  }
 
   // Global reference to prevent Chrome garbage-collection bug on SpeechSynthesisUtterance
   window._activeUtterance = null;
@@ -1016,10 +1129,13 @@ function setupControls() {
   }
 
   function speakSentence() {
-    const text = (sentenceWords.length
-      ? sentenceWords.join(' ')
-      : (sentenceDisplay.innerText || '').replace(/Your sentence will appear here[…\.]*/i, '')
-    ).trim();
+    const isTranslated = currentTargetLang !== 'en' && currentTranslatedText;
+    const text = isTranslated
+      ? currentTranslatedText
+      : (sentenceWords.length
+          ? sentenceWords.join(' ')
+          : ((sentenceOriginalText ? sentenceOriginalText.innerText : sentenceDisplay.innerText) || '').replace(/Your sentence will appear here[…\.]*/i, '')
+        ).trim();
 
     if (!text) {
       showToast('⚠️ No sentence to speak yet');
@@ -1031,7 +1147,9 @@ function setupControls() {
       btnSpeak.classList.add('active');
       btnSpeak.textContent = 'Speaking…';
     }
-    showToast(`🔊 Speaking: "${text}"`);
+
+    const langInfo = LANG_CONFIG[currentTargetLang] || { bcp47: 'en-US', voicePrefix: 'en' };
+    showToast(`🔊 Speaking (${langInfo.name || 'Original'}): "${text}"`);
 
     if ('speechSynthesis' in window) {
       try {
@@ -1040,17 +1158,19 @@ function setupControls() {
         const u = new SpeechSynthesisUtterance(text);
         window._activeUtterance = u; // Keep reference to prevent V8 GC drop
 
-        u.lang = 'en-US';
+        u.lang = langInfo.bcp47 || 'en-US';
         u.rate = 0.95;
         u.pitch = 1.0;
         u.volume = 1.0;
 
         const voices = window.speechSynthesis.getVoices();
         if (voices && voices.length > 0) {
-          const enVoice = voices.find(v => v.lang.startsWith('en') && !v.localService) ||
-                          voices.find(v => v.lang.startsWith('en')) ||
-                          voices[0];
-          if (enVoice) u.voice = enVoice;
+          const prefix = langInfo.voicePrefix || 'en';
+          const matchedVoice = voices.find(v => v.lang.toLowerCase().startsWith(prefix) && !v.localService) ||
+                               voices.find(v => v.lang.toLowerCase().startsWith(prefix)) ||
+                               voices.find(v => v.lang.toLowerCase().includes(prefix)) ||
+                               voices[0];
+          if (matchedVoice) u.voice = matchedVoice;
         }
 
         u.onend = () => {

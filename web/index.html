@@ -131,13 +131,44 @@
       <header class="panel-head">
         <h2 class="panel-title">Sentence</h2>
         <div class="panel-head-actions">
+          <select id="select-target-lang" class="select-lang-inline" title="Translate sentence to language" aria-label="Translate to language">
+            <option value="en">English (Original)</option>
+            <option value="ta">Tamil (தமிழ்)</option>
+            <option value="hi">Hindi (हिन्दी)</option>
+            <option value="te">Telugu (తెలుగు)</option>
+            <option value="ml">Malayalam (മലയാളം)</option>
+            <option value="kn">Kannada (ಕನ್ನಡ)</option>
+            <option value="es">Spanish (Español)</option>
+            <option value="fr">French (Français)</option>
+            <option value="de">German (Deutsch)</option>
+            <option value="ja">Japanese (日本語)</option>
+            <option value="zh">Chinese (中文)</option>
+            <option value="ar">Arabic (العربية)</option>
+          </select>
           <button class="btn btn-sm" id="btn-speak">Speak</button>
           <button class="btn btn-sm" id="btn-copy">Copy</button>
         </div>
       </header>
 
-      <div class="sentence-display" id="sentence-display" role="status" aria-live="polite">
-        <em class="ph">Your sentence will appear here</em>
+      <div class="sentence-display is-single" id="sentence-display" role="status" aria-live="polite">
+        <!-- Left Side: English Original -->
+        <div class="sentence-col sentence-col-orig" id="sentence-col-orig">
+          <div class="sentence-col-header" id="sentence-orig-header">
+            <span class="sentence-col-tag">English (Original)</span>
+          </div>
+          <div class="sentence-col-body" id="sentence-original-text">
+            <em class="ph">Your sentence will appear here</em>
+          </div>
+        </div>
+
+        <!-- Right Side: Selected Translated Language (shown only when a translated language is selected) -->
+        <div class="sentence-col sentence-col-trans" id="translation-box" style="display: none;">
+          <div class="sentence-col-header">
+            <span class="sentence-col-tag" id="translation-lang-tag">Translation</span>
+            <span class="translation-status" id="translation-status"></span>
+          </div>
+          <div class="sentence-col-body translation-text" id="translation-text"></div>
+        </div>
       </div>
 
       <div class="word-chips" id="word-chips"></div>
