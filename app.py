@@ -526,6 +526,28 @@ def speak_route():
     return jsonify({"status": "ok", "spoken": text})
 
 
+@app.route("/tts_audio", methods=["GET"])
+def tts_audio():
+    import urllib.request
+    import urllib.parse
+    from flask import Response
+
+    q = request.args.get("q", "").strip()
+    tl = request.args.get("tl", "en").strip()
+    if not q:
+        return "Missing text", 400
+
+    try:
+        url = f"https://translate.google.com/translate_tts?ie=UTF-8&tl={tl}&client=tw-ob&q=" + urllib.parse.quote(q)
+        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            audio_data = resp.read()
+        return Response(audio_data, mimetype="audio/mpeg")
+    except Exception as e:
+        print(f"[TTS Audio Error]: {e}")
+        return str(e), 500
+
+
 # ─── Run ───────────────────────────────────────────────────────────────────────
 if __name__ == "__main__":
     print("\n" + "=" * 60)

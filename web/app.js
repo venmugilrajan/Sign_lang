@@ -1151,6 +1151,40 @@ function setupControls() {
     const langInfo = LANG_CONFIG[currentTargetLang] || { bcp47: 'en-US', voicePrefix: 'en' };
     showToast(`🔊 Speaking (${langInfo.name || 'Original'}): "${text}"`);
 
+    function resetSpeakButton() {
+      if (btnSpeak) {
+        btnSpeak.classList.remove('active');
+        btnSpeak.textContent = 'Speak';
+      }
+    }
+
+    // For non-English languages (e.g. Tamil, Hindi, Telugu, Malayalam, etc.)
+    // Windows browsers lack native speech packs by default, causing silent failure.
+    // We stream high-quality native voice audio directly.
+    if (currentTargetLang !== 'en') {
+      try {
+        const audioUrl = `/tts_audio?tl=${encodeURIComponent(currentTargetLang)}&q=${encodeURIComponent(text)}`;
+        const audio = new Audio(audioUrl);
+        audio.onended = resetSpeakButton;
+        audio.onerror = () => {
+          console.warn('[SignLens] Audio TTS failed, attempting browser SpeechSynthesis fallback');
+          speakViaSpeechSynthesis(text, langInfo, btnSpeak, resetSpeakButton);
+        };
+        audio.play().catch(err => {
+          console.warn('[SignLens] Audio play blocked or failed:', err);
+          speakViaSpeechSynthesis(text, langInfo, btnSpeak, resetSpeakButton);
+        });
+        return;
+      } catch (err) {
+        console.warn('[SignLens] Native Audio TTS error:', err);
+      }
+    }
+
+    // Default English or SpeechSynthesis pathway
+    speakViaSpeechSynthesis(text, langInfo, btnSpeak, resetSpeakButton);
+  }
+
+  function speakViaSpeechSynthesis(text, langInfo, btnSpeak, onDone) {
     if ('speechSynthesis' in window) {
       try {
         window.speechSynthesis.cancel(); // Reset stuck Chromium speech queue
@@ -1175,10 +1209,7 @@ function setupControls() {
 
         u.onend = () => {
           window._activeUtterance = null;
-          if (btnSpeak) {
-            btnSpeak.classList.remove('active');
-            btnSpeak.textContent = 'Speak';
-          }
+          if (onDone) onDone();
         };
 
         u.onerror = (e) => {
@@ -1193,11 +1224,9 @@ function setupControls() {
           window.speechSynthesis.resume();
         }
 
-        // Safety timeout to reset button state after utterance
         setTimeout(() => {
           if (btnSpeak && btnSpeak.textContent === 'Speaking…') {
-            btnSpeak.classList.remove('active');
-            btnSpeak.textContent = 'Speak';
+            if (onDone) onDone();
           }
         }, Math.max(3000, text.split(' ').length * 1200));
 
