@@ -49,8 +49,8 @@ export const FACE_KEYS = [
 
 /** Signing-space layout, in units of arm length L (shoulder -> wrist at full reach). */
 const SPACE = {
-  single: { inward: 0.1, down: 0.25, forward: 0.62 },
-  two: { halfGap: 0.23, down: 0.28, forward: 0.58 },
+  single: { inward: 0.12, down: 0.18, forward: 0.60 },
+  two: { halfGap: 0.23, down: 0.26, forward: 0.58 },
   rest: { outward: 0.05, down: 0.93, forward: 0.02 },
   /** Nominal arm length (m) that HAND_UNIT_METERS was calibrated for. */
   nominalArm: 0.6,

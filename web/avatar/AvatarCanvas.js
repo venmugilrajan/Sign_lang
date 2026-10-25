@@ -461,16 +461,16 @@ export class AvatarCanvas {
   _frameWaistUp(layout) {
     this._layout = layout;
     const isMobile = (typeof window !== 'undefined' && window.innerWidth <= 768);
-    // Focus target at chest/neck center so face and both hands remain centered
-    const targetY = (layout.headY + layout.hipsY) * 0.53;
+    // Focus target at mid-chest center where sign gestures happen
+    const targetY = (layout.headY + layout.hipsY) * 0.52;
     this.controls.target.set(layout.centerX, targetY, layout.centerZ);
 
     // Frame camera: close waist-up view showing both arms, hands, and head prominently
     const span = Math.max(layout.shoulderSpan || 0.35, (layout.armLength || 0.55) * 1.25);
-    // On mobile, position camera closer (1.40m - 1.45m) so character is significantly larger
-    const dist = isMobile ? Math.max(1.40, span * 1.82) : Math.max(1.58, span * 2.05);
-    this.camera.fov = isMobile ? 30 : 32;
-    this.camera.position.set(layout.centerX, targetY + 0.03, layout.centerZ + dist);
+    const dist = isMobile ? Math.max(1.36, span * 1.75) : Math.max(1.48, span * 1.95);
+    this.camera.fov = isMobile ? 31 : 33;
+    // Slight offset to viewer-left gives a clear 3/4 studio angle of both hands
+    this.camera.position.set(layout.centerX - 0.12, targetY + 0.04, layout.centerZ + dist);
     this.camera.lookAt(this.controls.target);
     this.camera.updateProjectionMatrix();
     this.controls.update();
