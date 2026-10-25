@@ -3367,7 +3367,7 @@ function initUploadStudio() {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ mode: uploadDialect, image: dataUrl }),
-          signal: AbortSignal.timeout(1500)
+          signal: AbortSignal.timeout(4000)
         });
 
         if (srvRes.ok) {
@@ -3396,42 +3396,81 @@ function initUploadStudio() {
 
     // Client-side Landmark Detection via dedicated static IMAGE mode
     if (!classified) {
+      // If image is a known reference card, check if top banner is present
+      const isRefCard = (meta && meta.isSample) || false;
       let detectedHands = [];
       let detectedHandedness = [];
       const landmarker = await getImageLandmarker();
 
       if (landmarker) {
         try {
-          // 1. Direct detection on canvas
-          let result = landmarker.detect(uploadCanvas);
+          // Detect whether image has top header banner
+          let cropY1 = 0, cropY2 = h, cropX1 = 0, cropX2 = w;
+          let testCanvas = uploadCanvas;
+
+          if (isRefCard) {
+            cropY1 = Math.round(h * 0.19);
+            cropY2 = Math.round(h * 0.98);
+            cropX1 = Math.round(w * 0.04);
+            cropX2 = Math.round(w * 0.96);
+            const cropW = cropX2 - cropX1;
+            const cropH = cropY2 - cropY1;
+
+            const cCan = document.createElement('canvas');
+            cCan.width = cropW;
+            cCan.height = cropH;
+            const cCtx = cCan.getContext('2d');
+            if (cCtx) {
+              cCtx.drawImage(uploadCanvas, cropX1, cropY1, cropW, cropH, 0, 0, cropW, cropH);
+              testCanvas = cCan;
+            }
+          }
+
+          // 1. Direct detection on test canvas
+          let result = landmarker.detect(testCanvas);
           let adapted = adaptResults(result);
           if (adapted.multiHandLandmarks && adapted.multiHandLandmarks.length > 0) {
             detectedHands = adapted.multiHandLandmarks;
             detectedHandedness = adapted.multiHandedness;
           }
 
-          // 2. If 0 hands detected, test with 25% padding (handles edge-cropped hands)
+          // 2. If 0 hands detected, test with 25% padding
           if (detectedHands.length === 0) {
-            const pad = Math.round(Math.max(w, h) * 0.25);
+            const tw = testCanvas.width;
+            const th = testCanvas.height;
+            const pad = Math.round(Math.max(tw, th) * 0.25);
             const offCanvas = document.createElement('canvas');
-            offCanvas.width = w + pad * 2;
-            offCanvas.height = h + pad * 2;
+            offCanvas.width = tw + pad * 2;
+            offCanvas.height = th + pad * 2;
             const offCtx = offCanvas.getContext('2d');
             if (offCtx) {
-              offCtx.drawImage(uploadCanvas, pad, pad, w, h);
+              offCtx.drawImage(testCanvas, pad, pad, tw, th);
               result = landmarker.detect(offCanvas);
               adapted = adaptResults(result);
               if (adapted.multiHandLandmarks && adapted.multiHandLandmarks.length > 0) {
                 detectedHands = adapted.multiHandLandmarks.map(lm =>
                   lm.map(p => ({
-                    x: ((p.x * (w + pad * 2)) - pad) / w,
-                    y: ((p.y * (h + pad * 2)) - pad) / h,
+                    x: ((p.x * (tw + pad * 2)) - pad) / tw,
+                    y: ((p.y * (th + pad * 2)) - pad) / th,
                     z: p.z
                   }))
                 );
                 detectedHandedness = adapted.multiHandedness;
               }
             }
+          }
+
+          // Remap coordinates back to full image canvas if cropped
+          if (isRefCard && detectedHands.length > 0) {
+            const cropW = cropX2 - cropX1;
+            const cropH = cropY2 - cropY1;
+            detectedHands = detectedHands.map(lm =>
+              lm.map(p => ({
+                x: (p.x * cropW + cropX1) / w,
+                y: (p.y * cropH + cropY1) / h,
+                z: p.z
+              }))
+            );
           }
         } catch (err) {
           console.warn('[UploadStudio] Client-side MediaPipe error:', err);

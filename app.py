@@ -260,9 +260,28 @@ def predict_image():
             return jsonify({"error": "Failed to decode image"}), 400
 
         orig_h, orig_w = img_bgr.shape[:2]
+
+        # Check if the image is a reference card with a top banner ("Sign: X" or "ISL: X")
+        # Reference cards have a solid dark header banner in the top 20%
+        has_top_banner = False
+        crop_x1, crop_y1, crop_x2, crop_y2 = 0, 0, orig_w, orig_h
+        if orig_h >= 100 and orig_w >= 100:
+            top_corner = img_bgr[min(5, orig_h - 1), min(5, orig_w - 1)]
+            if int(top_corner[0]) < 65 and int(top_corner[1]) < 65 and int(top_corner[2]) < 75:
+                # Banner detected: focus on inner photo region
+                has_top_banner = True
+                crop_y1 = int(orig_h * 0.19)
+                crop_y2 = int(orig_h * 0.98)
+                crop_x1 = int(orig_w * 0.04)
+                crop_x2 = int(orig_w * 0.96)
+
+        proc_img = img_bgr[crop_y1:crop_y2, crop_x1:crop_x2] if has_top_banner else img_bgr
+        ph, pw = proc_img.shape[:2]
+
         pad_ratio = 0.15 if mode == "isl" else 0.25
-        pad = int(max(orig_h, orig_w) * pad_ratio)
-        img_padded = cv2.copyMakeBorder(img_bgr, pad, pad, pad, pad, cv2.BORDER_REPLICATE)
+        pad = int(max(ph, pw) * pad_ratio)
+        border_type = cv2.BORDER_CONSTANT if has_top_banner else cv2.BORDER_REPLICATE
+        img_padded = cv2.copyMakeBorder(proc_img, pad, pad, pad, pad, border_type, value=[0, 0, 0])
         hp, wp = img_padded.shape[:2]
 
         detector = get_static_detector()
@@ -275,8 +294,8 @@ def predict_image():
 
         # If 0 hands detected in ISL, retry with 0.25 padding as fallback
         if not results.hand_landmarks and mode == "isl":
-            pad = int(max(orig_h, orig_w) * 0.25)
-            img_padded = cv2.copyMakeBorder(img_bgr, pad, pad, pad, pad, cv2.BORDER_REPLICATE)
+            pad = int(max(ph, pw) * 0.25)
+            img_padded = cv2.copyMakeBorder(proc_img, pad, pad, pad, pad, cv2.BORDER_REPLICATE)
             hp, wp = img_padded.shape[:2]
             img_rgb = cv2.cvtColor(img_padded, cv2.COLOR_BGR2RGB)
             mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=img_rgb)
@@ -312,8 +331,8 @@ def predict_image():
 
             norm_pts = []
             for lm in lms:
-                px = lm.x * wp - pad
-                py = lm.y * hp - pad
+                px = (lm.x * wp - pad) + crop_x1
+                py = (lm.y * hp - pad) + crop_y1
                 norm_pts.append({
                     "x": float(np.clip(px / orig_w, 0.0, 1.0)),
                     "y": float(np.clip(py / orig_h, 0.0, 1.0)),
@@ -322,17 +341,30 @@ def predict_image():
             drawn_hands.append({"landmarks": norm_pts, "handedness": h_name})
 
             feat = extract_single_hand_features(lms, wp, hp, h_name, mode=mode)
-            hands_data.append((lms[0].x, feat))
+            hands_data.append((lms[0].x, feat, h_name))
 
         # Build feature vector matching model requirements
         clf = landmark_models[mode]
         labels = [str(c) for c in landmark_labels[mode]]
 
         if mode == "isl" and getattr(clf, "n_features_in_", 78) == 156:
-            hands_data.sort(key=lambda x: x[0])
-            slot1 = hands_data[0][1]
-            slot2 = hands_data[1][1] if len(hands_data) > 1 else np.zeros(78, dtype=np.float32)
-            features = np.concatenate([slot1, slot2]).tolist()
+            left_feat = np.zeros(78, dtype=np.float32)
+            right_feat = np.zeros(78, dtype=np.float32)
+
+            for item in hands_data:
+                h_side = item[2]
+                f = item[1]
+                if h_side == "Left":
+                    left_feat = f
+                else:
+                    right_feat = f
+
+            # If only 1 hand was detected and neither slot was assigned properly
+            if len(hands_data) == 1:
+                # If hand is Left, it went to left_feat; if Right, it went to right_feat
+                pass
+
+            features = np.concatenate([left_feat, right_feat]).tolist()
         else:
             features = hands_data[0][1].tolist()
 
@@ -342,8 +374,11 @@ def predict_image():
         if mode == "isl" and len(features) == 156:
             ISL_SINGLE_HAND = {'1', '2', '3', '4', '5', '6', '7', '8', '9', 'C', 'I', 'J', 'L', 'O', 'Q', 'U', 'V'}
             ISL_TWO_HAND = {'A', 'B', 'D', 'E', 'F', 'G', 'H', 'K', 'M', 'N', 'P', 'R', 'S', 'T', 'W', 'X', 'Y', 'Z'}
+            slot1 = features[:78]
             slot2 = features[78:]
-            num_hands = 1 if all(abs(v) < 1e-4 for v in slot2) else 2
+            has_slot1 = any(abs(v) > 1e-4 for v in slot1)
+            has_slot2 = any(abs(v) > 1e-4 for v in slot2)
+            num_hands = 2 if (has_slot1 and has_slot2) else 1
             if num_hands == 1:
                 for i, c in enumerate(labels):
                     if c not in ISL_SINGLE_HAND:
