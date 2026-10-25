@@ -131,20 +131,69 @@
       <header class="panel-head">
         <h2 class="panel-title">Sentence</h2>
         <div class="panel-head-actions">
-          <select id="select-target-lang" class="select-lang-inline" title="Translate sentence to language" aria-label="Translate to language">
-            <option value="en">English (Original)</option>
-            <option value="ta">Tamil (தமிழ்)</option>
-            <option value="hi">Hindi (हिन्दी)</option>
-            <option value="te">Telugu (తెలుగు)</option>
-            <option value="ml">Malayalam (മലയാളം)</option>
-            <option value="kn">Kannada (ಕನ್ನಡ)</option>
-            <option value="es">Spanish (Español)</option>
-            <option value="fr">French (Français)</option>
-            <option value="de">German (Deutsch)</option>
-            <option value="ja">Japanese (日本語)</option>
-            <option value="zh">Chinese (中文)</option>
-            <option value="ar">Arabic (العربية)</option>
-          </select>
+          <div class="lang-dropdown-wrapper" id="lang-dropdown-wrapper">
+            <button type="button" class="lang-picker-btn" id="lang-picker-btn" aria-haspopup="listbox" aria-expanded="false" title="Choose translation language">
+              <span class="lang-picker-icon">🌐</span>
+              <span class="lang-picker-label" id="lang-picker-current-label">English</span>
+              <svg class="lang-picker-chevron" viewBox="0 0 20 20" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                <polyline points="6 8 10 12 14 8"></polyline>
+              </svg>
+            </button>
+            <div class="lang-menu" id="lang-menu" role="listbox" aria-label="Select translation language">
+              <div class="lang-menu-header">Translate Sentence To</div>
+              <div class="lang-menu-list">
+                <button type="button" class="lang-item is-selected" data-lang="en">
+                  <span class="lang-name">English</span>
+                  <span class="lang-sub">Original</span>
+                </button>
+                <div class="lang-menu-divider"></div>
+                <button type="button" class="lang-item" data-lang="ta">
+                  <span class="lang-name">Tamil</span>
+                  <span class="lang-sub">தமிழ்</span>
+                </button>
+                <button type="button" class="lang-item" data-lang="hi">
+                  <span class="lang-name">Hindi</span>
+                  <span class="lang-sub">हिन्दी</span>
+                </button>
+                <button type="button" class="lang-item" data-lang="te">
+                  <span class="lang-name">Telugu</span>
+                  <span class="lang-sub">తెలుగు</span>
+                </button>
+                <button type="button" class="lang-item" data-lang="ml">
+                  <span class="lang-name">Malayalam</span>
+                  <span class="lang-sub">മലയാളം</span>
+                </button>
+                <button type="button" class="lang-item" data-lang="kn">
+                  <span class="lang-name">Kannada</span>
+                  <span class="lang-sub">ಕನ್ನಡ</span>
+                </button>
+                <button type="button" class="lang-item" data-lang="es">
+                  <span class="lang-name">Spanish</span>
+                  <span class="lang-sub">Español</span>
+                </button>
+                <button type="button" class="lang-item" data-lang="fr">
+                  <span class="lang-name">French</span>
+                  <span class="lang-sub">Français</span>
+                </button>
+                <button type="button" class="lang-item" data-lang="de">
+                  <span class="lang-name">German</span>
+                  <span class="lang-sub">Deutsch</span>
+                </button>
+                <button type="button" class="lang-item" data-lang="ja">
+                  <span class="lang-name">Japanese</span>
+                  <span class="lang-sub">日本語</span>
+                </button>
+                <button type="button" class="lang-item" data-lang="zh">
+                  <span class="lang-name">Chinese</span>
+                  <span class="lang-sub">中文</span>
+                </button>
+                <button type="button" class="lang-item" data-lang="ar">
+                  <span class="lang-name">Arabic</span>
+                  <span class="lang-sub">العربية</span>
+                </button>
+              </div>
+            </div>
+          </div>
           <button class="btn btn-sm" id="btn-speak">Speak</button>
           <button class="btn btn-sm" id="btn-copy">Copy</button>
         </div>

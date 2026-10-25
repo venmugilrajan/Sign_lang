@@ -103,14 +103,17 @@ const modeToggle      = document.getElementById('mode-toggle');
 const toast           = document.getElementById('toast');
 
 // Translation Elements & State
-const selectTargetLang    = document.getElementById('select-target-lang');
-const translationBox      = document.getElementById('translation-box');
-const translationLangTag  = document.getElementById('translation-lang-tag');
-const translationStatus   = document.getElementById('translation-status');
-const translationText     = document.getElementById('translation-text');
-let currentTargetLang     = 'en';
-let currentTranslatedText = '';
-let translateDebounceTimer = null;
+const langDropdownWrapper     = document.getElementById('lang-dropdown-wrapper');
+const langPickerBtn           = document.getElementById('lang-picker-btn');
+const langPickerCurrentLabel  = document.getElementById('lang-picker-current-label');
+const langMenu                = document.getElementById('lang-menu');
+const translationBox          = document.getElementById('translation-box');
+const translationLangTag      = document.getElementById('translation-lang-tag');
+const translationStatus       = document.getElementById('translation-status');
+const translationText         = document.getElementById('translation-text');
+let currentTargetLang         = 'en';
+let currentTranslatedText     = '';
+let translateDebounceTimer    = null;
 
 // ── Utilities ────────────────────────────────────────────────────────────────
 function showToast(msg, ms = 2000) {
@@ -1100,10 +1103,50 @@ function setupControls() {
     }
   });
 
-  if (selectTargetLang) {
-    selectTargetLang.addEventListener('change', (e) => {
-      currentTargetLang = e.target.value;
-      updateTranslation();
+  // Custom Language Picker Interactions
+  if (langPickerBtn && langDropdownWrapper && langMenu) {
+    langPickerBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const isOpen = langDropdownWrapper.classList.toggle('open');
+      langPickerBtn.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
+      langPickerBtn.classList.toggle('is-active', isOpen);
+    });
+
+    document.addEventListener('click', (e) => {
+      if (!langDropdownWrapper.contains(e.target)) {
+        langDropdownWrapper.classList.remove('open');
+        langPickerBtn.setAttribute('aria-expanded', 'false');
+        langPickerBtn.classList.remove('is-active');
+      }
+    });
+
+    const langItems = langMenu.querySelectorAll('.lang-item');
+    langItems.forEach(item => {
+      item.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const selectedLang = item.getAttribute('data-lang');
+        if (!selectedLang) return;
+
+        currentTargetLang = selectedLang;
+
+        // Update selected check in menu
+        langItems.forEach(i => i.classList.remove('is-selected'));
+        item.classList.add('is-selected');
+
+        // Update button label
+        const langName = item.querySelector('.lang-name')?.textContent || 'English';
+        if (langPickerCurrentLabel) {
+          langPickerCurrentLabel.textContent = langName;
+        }
+
+        // Close dropdown
+        langDropdownWrapper.classList.remove('open');
+        langPickerBtn.setAttribute('aria-expanded', 'false');
+        langPickerBtn.classList.remove('is-active');
+
+        // Trigger immediate translation / layout switch
+        updateTranslation();
+      });
     });
   }
 
