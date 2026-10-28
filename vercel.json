@@ -1,0 +1,18 @@
+{
+  "version": 2,
+  "public": false,
+  "rewrites": [
+    {
+      "source": "/tts_audio",
+      "destination": "/api/tts_audio"
+    },
+    {
+      "source": "/api/tts_audio",
+      "destination": "/api/tts_audio"
+    },
+    {
+      "source": "/(.*)",
+      "destination": "/web/$1"
+    }
+  ]
+}
