@@ -51,8 +51,8 @@
     <button class="ghost-btn guide-btn" popovertarget="panel-guide" id="btn-open-guide" aria-label="Open Sign Guide">
       <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: -2px; margin-right: 5px;"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"></path><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"></path></svg><span>Sign Guide</span>
     </button>
-    <button class="ghost-btn" popovertarget="panel-settings">Settings</button>
-    <button class="ghost-btn" popovertarget="panel-help">Shortcuts</button>
+    <button class="ghost-btn" id="btn-open-settings" popovertarget="panel-settings">Settings</button>
+    <button class="ghost-btn" id="btn-open-shortcuts" popovertarget="panel-help">Shortcuts</button>
     <button class="ghost-btn theme-toggle-btn" id="btn-theme-toggle" aria-label="Toggle Light or Dark Mode" title="Toggle Light / Dark Mode">
       <span id="theme-toggle-icon" aria-hidden="true">☀️</span>
     </button>
@@ -463,10 +463,13 @@
 </section>
 
 <!-- ══ SETTINGS (top layer) ═════════════════════════════════════════════ -->
-<div popover id="panel-settings" class="sheet" style="display: none;">
+<div popover id="panel-settings" class="sheet">
   <header class="sheet-head">
     <h2 class="sheet-title">Detection</h2>
-    <button class="ghost-btn" popovertarget="panel-settings" popovertargetaction="hide">Close</button>
+    <div style="display: flex; gap: 8px; align-items: center;">
+      <button class="ghost-btn" id="btn-reset-settings" title="Reset detection settings to defaults" style="font-size: 11px; padding: 4px 8px;">Reset</button>
+      <button class="ghost-btn" id="btn-close-settings" popovertarget="panel-settings" popovertargetaction="hide">Close</button>
+    </div>
   </header>
 
   <div class="field">
@@ -498,7 +501,7 @@
 </div>
 
 <!-- ══ SHORTCUTS (top layer) ════════════════════════════════════════════ -->
-<div popover id="panel-help" class="sheet" style="display: none;">
+<div popover id="panel-help" class="sheet">
   <header class="sheet-head">
     <h2 class="sheet-title">How it works</h2>
     <button class="ghost-btn" popovertarget="panel-help" popovertargetaction="hide">Close</button>

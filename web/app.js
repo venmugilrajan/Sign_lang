@@ -10,12 +10,16 @@ import { AvatarCanvas } from './avatar/AvatarCanvas.js?v=33';
 let globalAvatar3D = null;
 window.globalAvatar3D = null;
 
-// ── Config ──────────────────────────────────────────────────────────────────
-let   STREAK_NEEDED   = 5;     // frames of same letter to capture (settings sheet, matches native)
-const COOLDOWN_MS     = 350;   // ms after capture before detecting again (fluid sign transitions)
-let   SPACE_FRAMES    = 90;    // no-hand frames before auto word push (~3.0s at 30fps, plenty of transition time)
-let   MIN_CONFIDENCE  = 0.50;  // minimum classifier confidence (settings sheet, matches native 0.40-0.50)
-const MIN_HAND_SPAN   = 35;    // minimum pixel distance between wrist and middle MCP to reject ghost hands
+// ── Config & User Settings (with localStorage persistence) ─────────────────
+const DEFAULT_STREAK_NEEDED  = 5;
+const DEFAULT_SPACE_FRAMES   = 90;
+const DEFAULT_MIN_CONFIDENCE = 0.50;
+
+let STREAK_NEEDED  = parseInt(localStorage.getItem('signlens_streak_needed'), 10) || DEFAULT_STREAK_NEEDED;
+let SPACE_FRAMES   = parseInt(localStorage.getItem('signlens_space_frames'), 10) || DEFAULT_SPACE_FRAMES;
+let MIN_CONFIDENCE = parseFloat(localStorage.getItem('signlens_min_confidence')) || DEFAULT_MIN_CONFIDENCE;
+const COOLDOWN_MS  = 350;   // ms after capture before detecting again (fluid sign transitions)
+const MIN_HAND_SPAN = 35;   // minimum pixel distance between wrist and middle MCP to reject ghost hands
 
 // ── MediaPipe Hand Connections ───────────────────────────────────────────────
 const CONNECTIONS = [
@@ -1348,8 +1352,12 @@ function setupControls() {
     });
   }
 
-  // Settings sheet. Both thresholds are read live by processResult(),
-  // so no restart is needed after a change.
+  // Settings sheet with full persistence, reset button & fallback open/close
+  const panelSettings  = document.getElementById('panel-settings');
+  const btnOpenSettings = document.getElementById('btn-open-settings');
+  const btnCloseSettings = document.getElementById('btn-close-settings');
+  const btnResetSettings = document.getElementById('btn-reset-settings');
+
   const setConf        = document.getElementById('set-confidence');
   const outConf        = document.getElementById('out-confidence');
   const setStreak      = document.getElementById('set-streak');
@@ -1357,31 +1365,120 @@ function setupControls() {
   const setTimeoutInput = document.getElementById('set-timeout');
   const outTimeout     = document.getElementById('out-timeout');
 
-  setConf.value   = Math.round(MIN_CONFIDENCE * 100);
-  outConf.value   = `${setConf.value}%`;
-  setStreak.value = STREAK_NEEDED;
-  outStreak.value = STREAK_NEEDED;
-  if (setTimeoutInput && outTimeout) {
-    setTimeoutInput.value = (SPACE_FRAMES / 30).toFixed(1);
-    outTimeout.value      = `${setTimeoutInput.value}s`;
+  function renderSettingsUI() {
+    if (setConf && outConf) {
+      setConf.value = Math.round(MIN_CONFIDENCE * 100);
+      outConf.value = `${setConf.value}%`;
+      outConf.textContent = `${setConf.value}%`;
+    }
+    if (setStreak && outStreak) {
+      setStreak.value = STREAK_NEEDED;
+      outStreak.value = STREAK_NEEDED;
+      outStreak.textContent = STREAK_NEEDED;
+    }
+    if (setTimeoutInput && outTimeout) {
+      const sec = (SPACE_FRAMES / 30).toFixed(1);
+      setTimeoutInput.value = sec;
+      outTimeout.value = `${sec}s`;
+      outTimeout.textContent = `${sec}s`;
+    }
+    if (streakLabel) {
+      streakLabel.textContent = `0 / ${STREAK_NEEDED}`;
+    }
   }
 
-  setConf.addEventListener('input', () => {
-    MIN_CONFIDENCE = Number(setConf.value) / 100;
-    outConf.value  = `${setConf.value}%`;
-  });
+  // Initial render from persisted or default state
+  renderSettingsUI();
 
-  setStreak.addEventListener('input', () => {
-    STREAK_NEEDED   = Number(setStreak.value);
-    outStreak.value = STREAK_NEEDED;
-    resetStreak();                 // rescale the dial against the new target
-  });
+  if (setConf && outConf) {
+    const onConfChange = () => {
+      MIN_CONFIDENCE = Number(setConf.value) / 100;
+      outConf.value = `${setConf.value}%`;
+      outConf.textContent = `${setConf.value}%`;
+      localStorage.setItem('signlens_min_confidence', MIN_CONFIDENCE.toFixed(2));
+    };
+    setConf.addEventListener('input', onConfChange);
+    setConf.addEventListener('change', onConfChange);
+  }
+
+  if (setStreak && outStreak) {
+    const onStreakChange = () => {
+      STREAK_NEEDED = Number(setStreak.value);
+      outStreak.value = STREAK_NEEDED;
+      outStreak.textContent = STREAK_NEEDED;
+      localStorage.setItem('signlens_streak_needed', STREAK_NEEDED);
+      resetStreak();
+    };
+    setStreak.addEventListener('input', onStreakChange);
+    setStreak.addEventListener('change', onStreakChange);
+  }
 
   if (setTimeoutInput && outTimeout) {
-    setTimeoutInput.addEventListener('input', () => {
+    const onTimeoutChange = () => {
       const sec = Number(setTimeoutInput.value);
       SPACE_FRAMES = Math.round(sec * 30);
       outTimeout.value = `${sec.toFixed(1)}s`;
+      outTimeout.textContent = `${sec.toFixed(1)}s`;
+      localStorage.setItem('signlens_space_frames', SPACE_FRAMES);
+    };
+    setTimeoutInput.addEventListener('input', onTimeoutChange);
+    setTimeoutInput.addEventListener('change', onTimeoutChange);
+  }
+
+  if (btnResetSettings) {
+    btnResetSettings.addEventListener('click', () => {
+      MIN_CONFIDENCE = DEFAULT_MIN_CONFIDENCE;
+      STREAK_NEEDED  = DEFAULT_STREAK_NEEDED;
+      SPACE_FRAMES   = DEFAULT_SPACE_FRAMES;
+      localStorage.removeItem('signlens_min_confidence');
+      localStorage.removeItem('signlens_streak_needed');
+      localStorage.removeItem('signlens_space_frames');
+      renderSettingsUI();
+      resetStreak();
+      showToast('Settings reset to defaults');
+    });
+  }
+
+  // Robust open/close support for browsers with or without Popover API
+  function openSettingsSheet() {
+    if (!panelSettings) return;
+    if (typeof panelSettings.showPopover === 'function') {
+      try {
+        panelSettings.showPopover();
+        return;
+      } catch (e) {
+        // Fallback below
+      }
+    }
+    panelSettings.classList.add('open');
+    panelSettings.style.display = 'flex';
+  }
+
+  function closeSettingsSheet() {
+    if (!panelSettings) return;
+    if (typeof panelSettings.hidePopover === 'function') {
+      try {
+        panelSettings.hidePopover();
+      } catch (e) {
+        // Fallback below
+      }
+    }
+    panelSettings.classList.remove('open');
+    panelSettings.style.display = 'none';
+  }
+
+  if (btnOpenSettings) {
+    btnOpenSettings.addEventListener('click', (e) => {
+      // If browser doesn't natively popover or if already closed
+      if (typeof panelSettings?.showPopover !== 'function') {
+        e.preventDefault();
+        openSettingsSheet();
+      }
+    });
+  }
+  if (btnCloseSettings) {
+    btnCloseSettings.addEventListener('click', () => {
+      closeSettingsSheet();
     });
   }
 
