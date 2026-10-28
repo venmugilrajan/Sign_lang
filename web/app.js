@@ -1205,28 +1205,45 @@ function setupControls() {
       }
     }
 
-    // For non-English languages (e.g. Tamil, Hindi, Telugu, Malayalam, etc.)
-    // Windows browsers lack native speech packs by default, causing silent failure.
-    // We stream high-quality native voice audio directly.
+    // Multi-tiered audio stream for non-English languages (Tamil, Hindi, Telugu, Malayalam, etc.)
+    // Even when hosted as a static site without a server, we try cascading endpoints:
+    // 1) /tts_audio backend (if Flask running)
+    // 2) Free open-source TTS proxy / CORS-enabled endpoints
+    // 3) Browser SpeechSynthesis with dialect fallback
     if (currentTargetLang !== 'en') {
-      try {
-                const audioUrl = serverAvailable
-          ? `/tts_audio?tl=${encodeURIComponent(currentTargetLang)}&q=${encodeURIComponent(text)}`
-          : `https://translate.google.com/translate_tts?ie=UTF-8&tl=${encodeURIComponent(currentTargetLang)}&client=tw-ob&q=${encodeURIComponent(text)}`;
-        const audio = new Audio(audioUrl);
-        audio.onended = resetSpeakButton;
-        audio.onerror = () => {
-          console.warn('[SignLens] Audio TTS failed, attempting browser SpeechSynthesis fallback');
+      const q = encodeURIComponent(text);
+      const tl = encodeURIComponent(currentTargetLang);
+      const candidateAudioUrls = serverAvailable
+        ? [`/tts_audio?tl=${tl}&q=${q}`]
+        : [
+            `https://api.streamelements.com/kappa/v2/speech?voice=${langInfo.bcp47 || 'en-US'}&text=${q}`,
+            `https://dict.youdao.com/dictvoice?audio=${q}&le=${tl}`,
+            `https://translate.google.com/translate_tts?ie=UTF-8&tl=${tl}&client=tw-ob&q=${q}`
+          ];
+
+      let urlIndex = 0;
+      function tryNextAudioCandidate() {
+        if (urlIndex < candidateAudioUrls.length) {
+          const url = candidateAudioUrls[urlIndex++];
+          const audio = new Audio(url);
+          audio.onended = resetSpeakButton;
+          audio.onerror = () => {
+            console.warn(`[SignLens] Audio TTS endpoint failed (${url}), trying next candidate...`);
+            tryNextAudioCandidate();
+          };
+          audio.play().catch(err => {
+            console.warn(`[SignLens] Audio play error on ${url}:`, err);
+            tryNextAudioCandidate();
+          });
+        } else {
+          // All remote audio streams failed (e.g. offline), fallback to browser speech synthesis
+          console.warn('[SignLens] All remote audio streams failed, falling back to local speech synthesis');
           speakViaSpeechSynthesis(text, langInfo, btnSpeak, resetSpeakButton);
-        };
-        audio.play().catch(err => {
-          console.warn('[SignLens] Audio play blocked or failed:', err);
-          speakViaSpeechSynthesis(text, langInfo, btnSpeak, resetSpeakButton);
-        });
-        return;
-      } catch (err) {
-        console.warn('[SignLens] Native Audio TTS error:', err);
+        }
       }
+
+      tryNextAudioCandidate();
+      return;
     }
 
     // Default English or SpeechSynthesis pathway
