@@ -1206,7 +1206,9 @@ function setupControls() {
     // We stream high-quality native voice audio directly.
     if (currentTargetLang !== 'en') {
       try {
-        const audioUrl = `/tts_audio?tl=${encodeURIComponent(currentTargetLang)}&q=${encodeURIComponent(text)}`;
+                const audioUrl = serverAvailable
+          ? `/tts_audio?tl=${encodeURIComponent(currentTargetLang)}&q=${encodeURIComponent(text)}`
+          : `https://translate.google.com/translate_tts?ie=UTF-8&tl=${encodeURIComponent(currentTargetLang)}&client=tw-ob&q=${encodeURIComponent(text)}`;
         const audio = new Audio(audioUrl);
         audio.onended = resetSpeakButton;
         audio.onerror = () => {
