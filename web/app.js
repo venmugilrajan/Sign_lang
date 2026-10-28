@@ -11,11 +11,15 @@ let globalAvatar3D = null;
 window.globalAvatar3D = null;
 
 // ── Config & User Settings (with localStorage persistence) ─────────────────
-const DEFAULT_STREAK_NEEDED  = 5;
-const DEFAULT_SPACE_FRAMES   = 90;
+const DEFAULT_STREAK_NEEDED  = 30; // 30 frames (~1.0s hold)
+const DEFAULT_SPACE_FRAMES   = 90; // 90 frames (~3.0s delay)
 const DEFAULT_MIN_CONFIDENCE = 0.50;
 
 let STREAK_NEEDED  = parseInt(localStorage.getItem('signlens_streak_needed'), 10) || DEFAULT_STREAK_NEEDED;
+// Auto-migrate legacy frame count (3-15) to seconds-based frames (15-180 frames)
+if (STREAK_NEEDED < 15) {
+  STREAK_NEEDED = Math.max(15, Math.round(STREAK_NEEDED * 6));
+}
 let SPACE_FRAMES   = parseInt(localStorage.getItem('signlens_space_frames'), 10) || DEFAULT_SPACE_FRAMES;
 let MIN_CONFIDENCE = parseFloat(localStorage.getItem('signlens_min_confidence')) || DEFAULT_MIN_CONFIDENCE;
 const COOLDOWN_MS  = 350;   // ms after capture before detecting again (fluid sign transitions)
@@ -137,7 +141,8 @@ function setStreakVisual(pct) {
 function resetStreak() {
   streakLetter = null; streakCount = 0;
   setStreakVisual(0);
-  streakLabel.textContent = `0 / ${STREAK_NEEDED}`;
+  const targetSec = (STREAK_NEEDED / 30).toFixed(1);
+  streakLabel.textContent = `0.0s / ${targetSec}s`;
 }
 
 // ── Word / Sentence ───────────────────────────────────────────────────────────
@@ -698,7 +703,9 @@ function processResult(letter, confidence) {
 
   const pct = Math.min(100, Math.round((streakCount / STREAK_NEEDED) * 100));
   setStreakVisual(pct);
-  streakLabel.textContent = `${Math.min(streakCount, STREAK_NEEDED)} / ${STREAK_NEEDED}`;
+  const currentSec = (streakCount / 30).toFixed(1);
+  const targetSec = (STREAK_NEEDED / 30).toFixed(1);
+  streakLabel.textContent = `${currentSec}s / ${targetSec}s`;
 
   if (streakCount >= STREAK_NEEDED) {
     captureLetter(streakLetter, confidence);
@@ -1265,12 +1272,17 @@ function setupControls() {
 
         const voices = window.speechSynthesis.getVoices();
         if (voices && voices.length > 0) {
-          const prefix = langInfo.voicePrefix || 'en';
-          const matchedVoice = voices.find(v => v.lang.toLowerCase().startsWith(prefix) && !v.localService) ||
+          const prefix = (langInfo.voicePrefix || 'en').toLowerCase();
+          const bcp = (langInfo.bcp47 || '').toLowerCase();
+          const matchedVoice = voices.find(v => v.lang.toLowerCase() === bcp) ||
                                voices.find(v => v.lang.toLowerCase().startsWith(prefix)) ||
                                voices.find(v => v.lang.toLowerCase().includes(prefix)) ||
-                               voices[0];
-          if (matchedVoice) u.voice = matchedVoice;
+                               voices.find(v => (v.name || '').toLowerCase().includes(langInfo.name ? langInfo.name.toLowerCase() : prefix)) ||
+                               null;
+          if (matchedVoice) {
+            u.voice = matchedVoice;
+            u.lang = matchedVoice.lang;
+          }
         }
 
         u.onend = () => {
@@ -1389,9 +1401,10 @@ function setupControls() {
       outConf.textContent = `${setConf.value}%`;
     }
     if (setStreak && outStreak) {
-      setStreak.value = STREAK_NEEDED;
-      outStreak.value = STREAK_NEEDED;
-      outStreak.textContent = STREAK_NEEDED;
+      const sec = (STREAK_NEEDED / 30).toFixed(1);
+      setStreak.value = sec;
+      outStreak.value = `${sec}s`;
+      outStreak.textContent = `${sec}s`;
     }
     if (setTimeoutInput && outTimeout) {
       const sec = (SPACE_FRAMES / 30).toFixed(1);
@@ -1400,7 +1413,8 @@ function setupControls() {
       outTimeout.textContent = `${sec}s`;
     }
     if (streakLabel) {
-      streakLabel.textContent = `0 / ${STREAK_NEEDED}`;
+      const secTarget = (STREAK_NEEDED / 30).toFixed(1);
+      streakLabel.textContent = `0.0s / ${secTarget}s`;
     }
   }
 
@@ -1420,9 +1434,10 @@ function setupControls() {
 
   if (setStreak && outStreak) {
     const onStreakChange = () => {
-      STREAK_NEEDED = Number(setStreak.value);
-      outStreak.value = STREAK_NEEDED;
-      outStreak.textContent = STREAK_NEEDED;
+      const sec = Number(setStreak.value);
+      STREAK_NEEDED = Math.max(10, Math.round(sec * 30));
+      outStreak.value = `${sec.toFixed(1)}s`;
+      outStreak.textContent = `${sec.toFixed(1)}s`;
       localStorage.setItem('signlens_streak_needed', STREAK_NEEDED);
       resetStreak();
     };
