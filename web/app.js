@@ -1213,20 +1213,16 @@ function setupControls() {
     }
 
     // Multi-tiered audio stream for non-English languages (Tamil, Hindi, Telugu, Malayalam, etc.)
-    // Even when hosted as a static site without a server, we try cascading endpoints:
-    // 1) /tts_audio backend (if Flask running)
-    // 2) Free open-source TTS proxy / CORS-enabled endpoints
-    // 3) Browser SpeechSynthesis with dialect fallback
+    // ALWAYS prioritize the direct serverless edge endpoint /api/tts_audio or /tts_audio
+    // so Vercel, localhost, or any server environment plays clean, high-quality audio immediately!
     if (currentTargetLang !== 'en') {
       const q = encodeURIComponent(text);
       const tl = encodeURIComponent(currentTargetLang);
-      const candidateAudioUrls = serverAvailable
-        ? [`/tts_audio?tl=${tl}&q=${q}`]
-        : [
-            `https://api.streamelements.com/kappa/v2/speech?voice=${langInfo.bcp47 || 'en-US'}&text=${q}`,
-            `https://dict.youdao.com/dictvoice?audio=${q}&le=${tl}`,
-            `https://translate.google.com/translate_tts?ie=UTF-8&tl=${tl}&client=tw-ob&q=${q}`
-          ];
+      const candidateAudioUrls = [
+        `/api/tts_audio?tl=${tl}&q=${q}`,
+        `/tts_audio?tl=${tl}&q=${q}`,
+        `https://translate.google.com/translate_tts?ie=UTF-8&tl=${tl}&client=tw-ob&q=${q}`
+      ];
 
       let urlIndex = 0;
       function tryNextAudioCandidate() {
