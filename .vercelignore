@@ -1,0 +1,28 @@
+# Ignore heavy local training models and virtual environments
+models/
+hf_export/
+hf_space/
+PATENT/
+DESIGN_REGISTRATION/
+Review_Files/
+dataset/
+*.pth
+*.pkl
+*.task
+*.docx
+*.mp4
+*.zip
+*.tar.gz
+
+# Ignore local server files and dependencies
+app.py
+model.py
+requirements.txt
+Dockerfile
+test_*.py
+train_*.py
+build_*.py
+generate_*.py
+evaluate_*.py
+inspect_*.py
+*.py
