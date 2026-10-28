@@ -122,6 +122,9 @@ def load_all_models():
             cnn_labels[mode] = cnn_classes
             print(f"[+] Pixel CNN ready ({mode.upper()}) | {cnn_num_classes} classes")
 
+# Initialize models immediately when app module is imported (e.g. by gunicorn)
+load_all_models()
+
 
 def preprocess_image(image_b64: str) -> torch.Tensor:
     if "," in image_b64:
